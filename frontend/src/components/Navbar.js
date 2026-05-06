@@ -1,7 +1,7 @@
 import React from 'react';
 
 export default function Navbar({ currentPage, setCurrentPage, isLoggedIn, userName, setShowAuthModal, handleLogout }) {
-  const navItems = [{ key: "home", icon: "bi-house-fill", label: "Accueil" }, { key: "map", icon: "bi-map-fill", label: "Carte" }, { key: "list", icon: "bi-list-ul", label: "Établissements" }, { key: "contributions", icon: "bi-pencil-square", label: "Contributions" }];
+  const navItems = [{ key: "home", icon: "bi-house-fill", label: "Accueil" }, { key: "map", icon: "bi-map-fill", label: "Carte" }, { key: "list", icon: "bi-list-ul", label: "Établissements" }];
   return (
     <nav className="navbar navbar-expand-lg navbar-saha">
       <div className="container">
@@ -16,8 +16,6 @@ export default function Navbar({ currentPage, setCurrentPage, isLoggedIn, userNa
               <div className="dropdown">
                 <button className="btn btn-auth dropdown-toggle" data-bs-toggle="dropdown" style={{ display: "flex", alignItems: "center", gap: 8 }}><i className="bi bi-person-circle" style={{ fontSize: "1.2rem" }} /><span>{userName}</span></button>
                 <ul className="dropdown-menu dropdown-menu-end mt-2" style={{ borderRadius: 12, boxShadow: "var(--shadow-lg)", border: "none" }}>
-                  <li><a className="dropdown-item py-2" href="#" onClick={() => setCurrentPage("contributions")}><i className="bi bi-pencil-square me-2 text-primary" />Mes contributions</a></li>
-                  <li><hr className="dropdown-divider" /></li>
                   <li><a className="dropdown-item py-2 text-danger" href="#" onClick={handleLogout}><i className="bi bi-box-arrow-right me-2" />Déconnexion</a></li>
                 </ul>
               </div>

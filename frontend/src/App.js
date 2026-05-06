@@ -1,13 +1,11 @@
-import React, { useState, useRef } from "react";
-import { mockEtablissements } from './data/mockData.js';
+import React, { useState, useRef, useEffect } from "react";
+// Note: On n'importe plus mockEtablissements car on utilise le Backend
 import Navbar from './components/Navbar.js';
 import HomePage from './pages/HomePage.js';
 import MapPage from './pages/MapPage.js';
 import ListPage from './pages/ListPage.js';
-import ContributionsPage from './pages/ContributionsPage.js';
 import DetailModal from './components/DetailModal.js';
 import AuthModal from './components/AuthModal.js';
-import ContributionModal from './components/ContributionModal.js';
 import Toast from './components/Toast.js';
 import { AnimatePresence } from 'framer-motion';
 import Footer from './components/Footer.js';
@@ -20,7 +18,6 @@ export default function App() {
   const [selectedEtablissement, setSelectedEtablissement] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showContributionModal, setShowContributionModal] = useState(false);
   const [authTab, setAuthTab] = useState("login");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState("");
@@ -28,24 +25,46 @@ export default function App() {
   const [hoveredMarker, setHoveredMarker] = useState(null);
   const [userRating, setUserRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
-  const [contribType, setContribType] = useState("ajout");
-  const [contribDesc, setContribDesc] = useState("");
-  const [selectedEstablishmentForContrib, setSelectedEstablishmentForContrib] = useState("");
   const [geoLoading, setGeoLoading] = useState(false);
   const [mapCenter, setMapCenter] = useState({ lat: 33.5, lng: -7.0 });
+  
+  // États pour la connexion Backend
+  const [realEtablissements, setRealEtablissements] = useState([]);
+  const [isLoading, setIsLoading] = useState(true); // Pour gérer le chargement
+  
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [regName, setRegName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPass, setRegPass] = useState("");
+  
   const mapRef = useRef(null);
 
-  const filteredEtablissements = mockEtablissements.filter((e) => {
-    const matchSearch = e.nom.toLowerCase().includes(searchQuery.toLowerCase()) || e.adresse.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = activeFilters.length === 0 || activeFilters.includes(e.type);
-    const matchStatus = activeStatusFilter === "all" || e.etat === activeStatusFilter;
-    return matchSearch && matchType && matchStatus;
-  });
+  // 🚀 CHARGEMENT DES DONNÉES DEPUIS LE BACKEND AU DÉMARRAGE
+  useEffect(() => {
+  fetch('http://localhost:8000/api/etablissements')
+    .then(res => {
+      if (!res.ok) throw new Error(`Erreur HTTP: ${res.status}`);
+      return res.json();
+    })
+    .then(data => {
+      console.log(" Données reçues du backend :", data);
+      setRealEtablissements(data);
+      setIsLoading(false);
+    })
+    .catch(err => {
+      console.error("❌ Échec fetch backend :", err);
+      setIsLoading(false);
+      showToast("Backend injoignable", "error");
+    });
+}, []);
+  const filteredEtablissements = realEtablissements.filter((e) => {
+  const matchSearch = e.nom.toLowerCase().includes(searchQuery.toLowerCase()) || e.adresse.toLowerCase().includes(searchQuery.toLowerCase());
+  // ✅ CORRECTION : activeFilters vide = tout afficher
+  const matchType = activeFilters.length === 0 || activeFilters.includes(e.type);
+  const matchStatus = activeStatusFilter === "all" || e.etat === activeStatusFilter;
+  return matchSearch && matchType && matchStatus;
+});
 
   const handleFilterToggle = (type) => setActiveFilters(prev => prev.includes(type) ? prev.filter(f => f !== type) : [...prev, type]);
   const showToast = (message, type) => setToast({ message, type });
@@ -65,7 +84,6 @@ export default function App() {
   const handleLogout = () => { setIsLoggedIn(false); setUserName(""); showToast("Déconnexion réussie", "info"); };
   const openDetail = (e) => { setSelectedEtablissement(e); setShowDetailModal(true); setUserRating(0); setReviewText(""); };
   const handleSubmitReview = () => { if (userRating === 0) return showToast("Veuillez donner une note", "error"); showToast("Avis soumis avec succès ! Merci 🙏", "success"); setUserRating(0); setReviewText(""); };
-  const handleSubmitContribution = () => { if (!contribDesc.trim()) return showToast("Veuillez décrire votre contribution", "error"); if (contribType === "modification" && !selectedEstablishmentForContrib) return showToast("Veuillez sélectionner un établissement", "error"); showToast("Contribution soumise en attente de validation ✅", "success"); setContribDesc(""); setSelectedEstablishmentForContrib(""); setShowContributionModal(false); };
 
   const getMarkerPosition = (e) => {
     const w = mapRef.current?.clientWidth || 800, h = mapRef.current?.clientHeight || 500;
@@ -73,12 +91,23 @@ export default function App() {
   };
 
   const renderPage = () => {
-    const common = { searchQuery, setSearchQuery, activeFilters, activeStatusFilter, filteredEtablissements, handleFilterToggle, handleNearMe, geoLoading, mapCenter, mapRef, getMarkerPosition, hoveredMarker, setHoveredMarker, openDetail, isLoggedIn, userName, setShowAuthModal };
+    // Si on charge encore, on affiche un petit message ou rien
+    if (isLoading) return <div style={{ textAlign: "center", padding: "50px" }}>Chargement des établissements...</div>;
+
+    const common = { 
+      searchQuery, setSearchQuery, 
+      activeFilters, setActiveFilters,
+      activeStatusFilter, setActiveStatusFilter, 
+      filteredEtablissements, handleFilterToggle, 
+      handleNearMe, geoLoading, mapCenter, mapRef, 
+      getMarkerPosition, hoveredMarker, setHoveredMarker, 
+      openDetail, isLoggedIn, userName, setShowAuthModal 
+    };
+    
     switch(currentPage) {
       case "home": return <HomePage {...common} setCurrentPage={setCurrentPage} />;
       case "map": return <MapPage {...common} setCurrentPage={setCurrentPage} />;
       case "list": return <ListPage {...common} />;
-      case "contributions": return <ContributionsPage isLoggedIn={isLoggedIn} setShowAuthModal={setShowAuthModal} setShowContributionModal={setShowContributionModal} />;
       default: return null;
     }
   };
@@ -90,7 +119,6 @@ export default function App() {
       <Footer />
       <DetailModal show={showDetailModal} setShow={setShowDetailModal} selected={selectedEtablissement} isLoggedIn={isLoggedIn} setShowAuth={setShowAuthModal} userRating={userRating} setUserRating={setUserRating} reviewText={reviewText} setReviewText={setReviewText} handleSubmitReview={handleSubmitReview} />
       <AuthModal show={showAuthModal} setShow={setShowAuthModal} authTab={authTab} setAuthTab={setAuthTab} loginEmail={loginEmail} setLoginEmail={setLoginEmail} loginPass={loginPass} setLoginPass={setLoginPass} handleLogin={handleLogin} regName={regName} setRegName={setRegName} regEmail={regEmail} setRegEmail={setRegEmail} regPass={regPass} setRegPass={setRegPass} handleRegister={handleRegister} />
-      <ContributionModal show={showContributionModal} setShow={setShowContributionModal} contribType={contribType} setContribType={setContribType} contribDesc={contribDesc} setContribDesc={setContribDesc} selectedEstablishment={selectedEstablishmentForContrib} setSelectedEstablishment={setSelectedEstablishmentForContrib} mockEtablissements={mockEtablissements} handleSubmitContribution={handleSubmitContribution} />
       <AnimatePresence>{toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}</AnimatePresence>
     </div>
   );
