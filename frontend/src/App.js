@@ -8,6 +8,7 @@ import AuthModal from './components/AuthModal.js';
 import Toast from './components/Toast.js';
 import { AnimatePresence } from 'framer-motion';
 import Footer from './components/Footer.js';
+import NearMePage from './pages/NearMePage';
 
 export default function App() {
   // États de navigation et filtres
@@ -19,7 +20,6 @@ export default function App() {
   // États pour les modals
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [authTab, setAuthTab] = useState("login");
   
   // États utilisateur
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -36,20 +36,13 @@ export default function App() {
   const [realEtablissements, setRealEtablissements] = useState([]);
   const [mapCenter, setMapCenter] = useState({ lat: 33.5, lng: -7.0 });
   
-  // États formulaire auth
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPass, setLoginPass] = useState("");
-  const [regName, setRegName] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regPass, setRegPass] = useState("");
-  
   // États pour les avis
   const [userRating, setUserRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   
   const mapRef = useRef(null);
 
-  // ✅ FONCTION TOAST CENTRALE (à passer aux composants enfants)
+  // ✅ FONCTION TOAST CENTRALE
   const showToast = (message, type = "info") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -108,22 +101,6 @@ export default function App() {
     }
   };
 
-  const handleLogin = () => {
-    if (!loginEmail || !loginPass) return showToast("Remplissez tous les champs", "error");
-    setIsLoggedIn(true);
-    setUserName(loginEmail.split("@")[0]);
-    setShowAuthModal(false);
-    showToast("✅ Connexion réussie !", "success");
-  };
-
-  const handleRegister = () => {
-    if (!regName || !regEmail || !regPass) return showToast("Remplissez tous les champs", "error");
-    setIsLoggedIn(true);
-    setUserName(regName);
-    setShowAuthModal(false);
-    showToast("✅ Compte créé ! Bienvenue 🎉", "success");
-  };
-
   const handleLogout = () => {
     setIsLoggedIn(false);
     setUserName("");
@@ -174,6 +151,8 @@ export default function App() {
         return <MapPage {...common} setCurrentPage={setCurrentPage} />;
       case "list": 
         return <ListPage {...common} />;
+      case "near-me": 
+        return <NearMePage {...common} />;
       default: 
         return null;
     }
@@ -200,40 +179,31 @@ export default function App() {
       {/* Footer */}
       <Footer />
       
-     <DetailModal 
-  show={showDetailModal}
-  setShow={setShowDetailModal}
-  selectedId={selectedEtablissement?.id}
-  isLoggedIn={isLoggedIn}
-  setShowAuth={setShowAuthModal}
-  userId={1}
-  showToast={showToast}
-  onReviewPosted={() => {
-    // ✅ Re-fetch la liste complète pour mettre à jour les notes/compteurs à l'extérieur
-    fetch('http://localhost:8000/api/etablissements')
-      .then(res => res.json()).then(setRealEtablissements);
-  }}
-/>
+      {/* Detail Modal */}
+      <DetailModal 
+        show={showDetailModal}
+        setShow={setShowDetailModal}
+        selectedId={selectedEtablissement?.id}
+        isLoggedIn={isLoggedIn}
+        setShowAuth={setShowAuthModal}
+        userId={1}
+        showToast={showToast}
+        onReviewPosted={() => {
+          fetch('http://localhost:8000/api/etablissements')
+            .then(res => res.json())
+            .then(setRealEtablissements);
+        }}
+      />
       
-      
-      {/* Modal Auth */}
+      {/* Auth Modal - VERSION NETTOYÉE */}
       <AuthModal 
-        show={showAuthModal} 
-        setShow={setShowAuthModal} 
-        authTab={authTab} 
-        setAuthTab={setAuthTab} 
-        loginEmail={loginEmail} 
-        setLoginEmail={setLoginEmail} 
-        loginPass={loginPass} 
-        setLoginPass={setLoginPass} 
-        handleLogin={handleLogin} 
-        regName={regName} 
-        setRegName={setRegName} 
-        regEmail={regEmail} 
-        setRegEmail={setRegEmail} 
-        regPass={regPass} 
-        setRegPass={setRegPass} 
-        handleRegister={handleRegister} 
+        show={showAuthModal}
+        setShow={setShowAuthModal}
+        onAuthSuccess={(user) => {
+          setIsLoggedIn(true);
+          setUserName(user.nom);
+        }}
+        showToast={showToast}
       />
       
       {/* Toast notifications */}

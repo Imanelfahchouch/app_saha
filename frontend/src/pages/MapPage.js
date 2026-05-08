@@ -85,7 +85,35 @@ export default function MapPage(props) {
         }
       });
   };
-    const handleCitySearch = async (cityName) => {
+
+  // ✅ AJOUT : Fonction de géocodage OpenStreetMap (Nominatim) - GRATUIT, sans clé API
+  const handleCitySearchOSM = async (cityName) => {
+    if (!cityName.trim()) return;
+    
+    try {
+      // API Nominatim d'OpenStreetMap (gratuit, sans authentification)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName + ', Maroc')}&limit=1&addressdetails=1`,
+        { headers: { 'Accept-Language': 'fr' } }
+      );
+      const data = await response.json();
+      
+      if (data && data.length > 0 && data[0].lat && data[0].lon) {
+        const lat = parseFloat(data[0].lat);
+        const lon = parseFloat(data[0].lon);
+        console.log(`📍 Centrage OSM sur ${cityName}:`, lat, lon);
+        setMapCenter({ lat, lng: lon });
+        setZoom(13); // Zoom ville
+      } else {
+        console.warn('⚠️ Ville non trouvée via Nominatim:', cityName);
+      }
+    } catch (err) {
+      console.error('❌ Erreur géocodage OSM:', err);
+    }
+  };
+  
+
+  const handleCitySearch = async (cityName) => {
     if (!cityName.trim()) return;
     
     try {
@@ -107,15 +135,40 @@ export default function MapPage(props) {
   // Données à passer au composant Map (priorité aux données locales si Near Me actif)
   const establishmentsToUse = localEstablishments.length > 0 ? localEstablishments : props.filteredEtablissements;
 
-    // ✅ Effet pour centrer la carte sur une ville connue
+  // ✅ AJOUT : Zoom automatique sur les résultats filtrés
+    // ✅ ZOOM AUTOMATIQUE IMMÉDIAT (Déclenché dès que les filtres/recherche changent)
   useEffect(() => {
-    const villes = ['rabat', 'casablanca', 'fes', 'marrakech', 'tanger', 'agadir'];
+    if (establishmentsToUse?.length > 0) {
+      setMapCenter({ 
+        lat: establishmentsToUse[0].latitude, 
+        lng: establishmentsToUse[0].longitude 
+      });
+      setZoom(establishmentsToUse.length === 1 ? 16 : establishmentsToUse.length <= 5 ? 14 : 13);
+    }
+  }, [establishmentsToUse, props.activeFilters, props.searchQuery, props.activeStatusFilter]);
+
+  // ✅ Effet pour centrer la carte sur une ville connue (MODIFICATION MINIMALE : extraction de ville depuis "hopital de rabat")
+  useEffect(() => {
+    const villes = ['rabat', 'casablanca', 'fes', 'marrakech', 'tanger', 'agadir', 'meknes', 'oujda', 'taza'];
     const query = props.searchQuery?.toLowerCase().trim();
     
-    if (query && villes.includes(query)) {
-      handleCitySearch(query);
+    if (query) {
+      // ✅ Extraction de la ville depuis une requête comme "hopital de rabat" ou "pharmacie casablanca"
+      let cityFound = null;
+      for (const ville of villes) {
+        if (query.includes(ville)) {
+          cityFound = ville;
+          break;
+        }
+      }
+      
+      if (cityFound) {
+        // ✅ Utilise OSM (gratuit) au lieu de Google Maps
+        handleCitySearchOSM(cityFound);
+      }
     }
   }, [props.searchQuery]);
+
   return (
     <>
       <div className="py-4" style={{ background: "#fff" }}>
@@ -216,6 +269,8 @@ export default function MapPage(props) {
         {...props} 
         filteredEtablissements={establishmentsToUse}
         userLocation={userLocation}
+        mapCenter={mapCenter}
+        zoom={zoom}
       />
 
       {/* Liste des résultats */}

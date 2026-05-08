@@ -34,34 +34,45 @@ export default function AuthModal({ show, setShow, onAuthSuccess, showToast }) {
     return Object.keys(newErrors).length === 0;
   };
 
-  // ✅ APPEL RÉEL À TON BACKEND FASTAPI
   const handleSubmit = async (e) => {
     e.preventDefault();
     const isLogin = authTab === 'login';
+    const form = isLogin ? loginForm : registerForm;
     
-    if (!validate(isLogin ? loginForm : registerForm, isLogin)) return;
+    if (!validate(form, isLogin)) return;
     
     try {
       setLoading(true);
       const endpoint = isLogin ? '/auth/login' : '/auth/register';
       
-      // ✅ CORRECTION : Utiliser "mot_de_passe" pour login ET register (comme ton backend)
-      const payload = {
-        email: isLogin ? loginForm.email : registerForm.email,
-        mot_de_passe: isLogin ? loginForm.password : registerForm.password,
-        ...( !isLogin && { nom: registerForm.nom } )
-      };
+      // ✅ Payload aligné avec FastAPI : 'mot_de_passe' pour register, form-data pour login
+      let payload;
+      if (isLogin) {
+        // Login utilise OAuth2PasswordRequestForm → enctype application/x-www-form-urlencoded
+        payload = new URLSearchParams();
+        payload.append('username', loginForm.email);  // ← OAuth2 attend 'username' pour l'email
+        payload.append('password', loginForm.password);
+      } else {
+        // Register utilise JSON → application/json
+        payload = {
+          nom: registerForm.nom,
+          email: registerForm.email,
+          mot_de_passe: registerForm.password.slice(0, 72)  // ← Tronque à 72 chars pour bcrypt
+        };
+      }
 
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        headers: isLogin 
+          ? { 'Content-Type': 'application/x-www-form-urlencoded' }
+          : { 'Content-Type': 'application/json' },
+        body: isLogin ? payload : JSON.stringify(payload)
       });
 
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.detail?.[0]?.msg || data.detail || data.message || 'Erreur serveur');
+        throw new Error(data.detail || data.message || 'Erreur serveur');
       }
 
       // ✅ Sauvegarde du token JWT
@@ -69,7 +80,7 @@ export default function AuthModal({ show, setShow, onAuthSuccess, showToast }) {
         localStorage.setItem('token', data.access_token);
       }
 
-      // ✅ Mise à jour état parent
+      // ✅ Notification au parent
       if (onAuthSuccess && data.user) {
         onAuthSuccess(data.user);
       }
@@ -101,8 +112,8 @@ export default function AuthModal({ show, setShow, onAuthSuccess, showToast }) {
             </div>
             <div className="modal-body pt-0 px-4 pb-4">
               <div className="d-flex rounded-pill bg-light p-1 mb-4" style={{ maxWidth: '300px', margin: '0 auto' }}>
-                <button className={`flex-fill py-2 rounded-pill text-sm fw-medium transition-all ${authTab === 'login' ? 'bg-white shadow text-primary' : 'text-muted'}`} onClick={() => { setAuthTab('login'); setErrors({}); }}>Connexion</button>
-                <button className={`flex-fill py-2 rounded-pill text-sm fw-medium transition-all ${authTab === 'register' ? 'bg-white shadow text-primary' : 'text-muted'}`} onClick={() => { setAuthTab('register'); setErrors({}); }}>Inscription</button>
+                <button className={`flex-fill py-2 rounded-pill text-sm fw-medium ${authTab === 'login' ? 'bg-white shadow text-primary' : 'text-muted'}`} onClick={() => { setAuthTab('login'); setErrors({}); }}>Connexion</button>
+                <button className={`flex-fill py-2 rounded-pill text-sm fw-medium ${authTab === 'register' ? 'bg-white shadow text-primary' : 'text-muted'}`} onClick={() => { setAuthTab('register'); setErrors({}); }}>Inscription</button>
               </div>
               {errors.submit && <div className="alert alert-danger py-2 mb-3 small">{errors.submit}</div>}
               <form onSubmit={handleSubmit} className="space-y-3">
