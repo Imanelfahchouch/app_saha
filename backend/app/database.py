@@ -1,17 +1,19 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from .config import DATABASE_URL
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
 
-# Création du moteur de connexion
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/saha_db")
+
 engine = create_engine(DATABASE_URL)
-
-# Session pour interagir avec la DB
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Classe de base pour nos modèles (tables)
+# ✅ CETTE LIGNE EST CRITIQUE : Base doit être définie ICI, pas dans models.py
 Base = declarative_base()
 
-# Fonction utilitaire pour avoir une session DB
 def get_db():
     db = SessionLocal()
     try:

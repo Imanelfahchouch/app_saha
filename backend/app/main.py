@@ -1,29 +1,35 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# ✅ IMPORTS DES ROUTERS (CORRIGÉ)
+# ✅ Import du routeur (chemin relatif correct)
 from app.routers import etablissements
-from app.routers import auth  # ← Ajouté : import du module auth
+from app.routers import stats  # ✅ AJOUTE CETTE LIGNE
 
-app = FastAPI(title="SAHA API", description="Plateforme de géolocalisation santé Maroc")
+app = FastAPI(title="SAHA API", version="1.0")
 
-# CORS : autoriser le frontend React
+# ✅ CORS : autorise le frontend React à appeler le backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["*"],  # En prod : ["http://localhost:3000"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ INCLUSION DES ROUTES (CORRIGÉ)
-app.include_router(etablissements.router, prefix="/api")
-app.include_router(auth.router, prefix="/api")  # ← Maintenant 'auth' est défini ✅
+# ✅ ENREGISTREMENT DU ROUTEUR (C'EST ICI QUE ÇA SE JOUE)
+app.include_router(
+    etablissements.router,
+    prefix="/api",  # Toutes les routes auront /api en préfixe
+    tags=["Établissements"]
+)
+app.include_router(stats.router, prefix="/api")  
 
+# Route de test
 @app.get("/")
 def root():
-    return {"message": "✅ SAHA API is running", "docs": "/docs"}
+    return {"message": "🚀 SAHA API is running", "docs": "/docs"}
 
+# Route de santé
 @app.get("/health")
 def health():
     return {"status": "ok"}
