@@ -1,11 +1,11 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { typeIcons, typeLabels } from '../data/mockData.js';
 
-// ⚠️ REMPLACE CECI PAR TA VRAIE CLÉ API GOOGLE/ ⚠️ REMPLACE CECI PAR TA VRAIE CLÉ API GOOGLE
-const GOOGLE_MAPS_API_KEY = 'https://data.gov.ma/data/api/3/action/package_show?id=la-liste-des-hopitaux'; 
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_KEY;
 
-// Style de la carte pour qu'elle prenne toute la place
+// ✅ FIX : Déclarer libraries EN DEHORS du composant (référence stable)
+const MAP_LIBRARIES = ['places'];
+
 const containerStyle = {
   width: '100%',
   height: '500px',
@@ -13,47 +13,35 @@ const containerStyle = {
   boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
 };
 
-// Centrage par défaut sur le Maroc (Casablanca)
-const center = {
-  lat: 33.5731,
-  lng: -7.5898
-};
+const DEFAULT_CENTER = { lat: 33.5731, lng: -7.5898 };
+const DEFAULT_ZOOM = 6;
 
-export default function Map({ filteredEtablissements, hoveredMarker, setHoveredMarker, openDetail }) {
-  
-  // Chargement de l'API Google
+const typeIcons = { pharmacie: '💊', clinique: '🏥', hopital: '🏨' };
+
+export default function Map({ filteredEtablissements, openDetail, userLocation, mapCenter, zoom }) {
+  const [hoveredMarker, setHoveredMarker] = useState(null);
+  const [selectedMarker, setSelectedMarker] = useState(null);
+
+  // ✅ FIX : Utiliser la constante MAP_LIBRARIES (même référence à chaque render)
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: ['places'] // Utile pour la recherche future
+    libraries: MAP_LIBRARIES
   });
 
-  // Mémorisation des options pour éviter les re-renders inutiles
   const mapOptions = useMemo(() => ({
     disableDefaultUI: false,
     zoomControl: true,
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: true,
-    styles: [
-      {
-        "featureType": "poi",
-        "elementType": "labels",
-        "stylers": [{ "visibility": "off" }] // Cache les points d'intérêt par défaut de Google pour un look plus propre
-      }
-    ]
+    styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
   }), []);
 
-  const onLoad = useCallback(function callback(map) {
-    // Tu peux manipuler l'objet map ici si besoin (ex: bornes limites)
-  }, []);
+  const onLoad = useCallback(() => {}, []);
+  const onUnmount = useCallback(() => {}, []);
 
-  const onUnmount = useCallback(function callback(map) {
-    // Nettoyage
-  }, []);
-
-  // Affichage si l'API ne charge pas
-  if (loadError) return <div style={{ padding: 20, textAlign: 'center' }}>❌ Erreur de chargement Google Maps. Vérifie ta clé API.</div>;
-  if (!isLoaded) return <div style={{ padding: 20, textAlign: 'center' }}>Chargement de la carte...</div>;
+  if (loadError) return <div className="p-5 text-center text-danger">❌ Erreur Google Maps</div>;
+  if (!isLoaded) return <div className="p-5 text-center">Chargement de la carte...</div>;
 
   return (
     <section className="py-4" style={{ background: "#fff" }}>
@@ -62,48 +50,57 @@ export default function Map({ filteredEtablissements, hoveredMarker, setHoveredM
           <h3 className="section-title mb-0">
             <i className="bi bi-map-fill text-primary me-2" />Carte Interactive
           </h3>
-          <div className="d-flex gap-2 align-items-center">
-            <span style={{ fontSize: "0.75rem", color: "var(--gray-500)" }}>
-              <i className="bi bi-geo-alt-fill text-danger me-1" />Maroc — {filteredEtablissements.length} résultats
-            </span>
-          </div>
+          <span style={{ fontSize: "0.75rem", color: "var(--gray-500)" }}>
+            <i className="bi bi-geo-alt-fill text-danger me-1" />Maroc — {filteredEtablissements?.length || 0} résultats
+          </span>
         </div>
-
-        {/* VRAIE GOOGLE MAP */}
+    
         <GoogleMap
           mapContainerStyle={containerStyle}
-          center={center}
-          zoom={6}
+          center={mapCenter || DEFAULT_CENTER}
+          zoom={zoom || DEFAULT_ZOOM}
           options={mapOptions}
           onLoad={onLoad}
           onUnmount={onUnmount}
         >
-          {/* Marqueurs dynamiques */}
-          {filteredEtablissements.map((etab) => (
+          {userLocation && (
+            <Marker 
+              position={userLocation} 
+              title="Votre position"
+              icon={{
+                path: "M0-48c-9 0-16 7-16 16 0 9 16 32 16 32s16-23 16-32c0-9-7-16-16-16z",
+                fillColor: "#0EA5E9",
+                fillOpacity: 1,
+                strokeColor: "#fff", 
+                strokeWeight: 2,
+                scale: 0.8
+              }}
+            />
+          )}
+
+          {filteredEtablissements?.map((etab) => (
             <Marker
               key={etab.id}
               position={{ lat: etab.latitude, lng: etab.longitude }}
-              // Icône personnalisée selon le type (optionnel, ici on utilise le marker par défaut avec un label)
               label={{
-                text: etab.type === 'pharmacie' ? '💊' : etab.type === 'clinique' ? '🏥' : '🏨',
+                text: typeIcons[etab.type] || '📍',
                 color: 'white',
-                fontSize: '14px',
-                className: 'custom-marker-label'
+                fontSize: '14px'
               }}
               onMouseOver={() => setHoveredMarker(etab.id)}
               onMouseOut={() => setHoveredMarker(null)}
-              onClick={() => openDetail(etab)}
-              animation={hoveredMarker === etab.id ? window.google.maps.Animation.BOUNCE : undefined}
+              onClick={() => setSelectedMarker(etab)}
+              animation={hoveredMarker === etab.id ? window.google?.maps?.Animation?.BOUNCE : undefined}
             >
-              {/* InfoWindow qui s'ouvre au survol ou au clic */}
-              {hoveredMarker === etab.id && (
-                <InfoWindow onCloseClick={() => setHoveredMarker(null)}>
-                  <div style={{ padding: '5px', maxWidth: '200px' }}>
+              {(hoveredMarker === etab.id || selectedMarker?.id === etab.id) && (
+                <InfoWindow onCloseClick={() => { setHoveredMarker(null); setSelectedMarker(null); }}>
+                  <div style={{ padding: '5px', maxWidth: '220px' }}>
                     <h6 style={{ margin: '0 0 5px', fontWeight: 'bold', color: '#1B2A4A' }}>{etab.nom}</h6>
                     <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>{etab.adresse}</p>
+                    {etab.telephone && <p style={{ margin: '4px 0 0', fontSize: '0.75rem' }}>📞 {etab.telephone}</p>}
                     <button 
-                      style={{ marginTop: '8px', background: '#0077B6', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
-                      onClick={() => openDetail(etab)}
+                      style={{ marginTop: '8px', background: '#0077B6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer', fontSize: '0.8rem' }}
+                      onClick={() => { setSelectedMarker(null); openDetail?.(etab); }}
                     >
                       Voir détails
                     </button>

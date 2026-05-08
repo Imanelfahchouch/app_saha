@@ -38,7 +38,7 @@ class User(Base):
     reviews = relationship("Review", back_populates="user")
 
 class Establishment(Base):
-    __tablename__ = "etablissements"
+    __tablename__ = "etablissement"
     id = Column(Integer, primary_key=True, index=True)
     nom = Column(String(150), nullable=False)
     type = Column(Enum(EstablishmentType), nullable=False)
@@ -54,7 +54,7 @@ class Review(Base):
     __tablename__ = "reviews"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    etablissement_id = Column(Integer, ForeignKey("etablissements.id"))
+    etablissement_id = Column(Integer, ForeignKey("etablissement.id"))
     rating = Column(Integer, nullable=False) # Note sur 5
     commentaire = Column(Text)
     statut = Column(Enum(ReviewStatus), default=ReviewStatus.valide)

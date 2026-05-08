@@ -9,6 +9,7 @@ import AuthModal from './components/AuthModal.js';
 import Toast from './components/Toast.js';
 import { AnimatePresence } from 'framer-motion';
 import Footer from './components/Footer.js';
+import NearMePage from './pages/NearMePage';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("home");
@@ -70,14 +71,43 @@ export default function App() {
   const showToast = (message, type) => setToast({ message, type });
 
   const handleNearMe = () => {
-    setGeoLoading(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(pos => {
-        setMapCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        showToast("Localisation détectée avec succès !", "success"); setGeoLoading(false);
-      }, () => { setMapCenter({ lat: 33.5731, lng: -7.5898 }); showToast("Localisation par défaut : Casablanca", "info"); setGeoLoading(false); });
-    } else { showToast("Géolocalisation non supportée", "error"); setGeoLoading(false); }
-  };
+  setGeoLoading(true);
+  if (!navigator.geolocation) {
+    showToast("Géolocalisation non supportée", "error");
+    setGeoLoading(false);
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude, longitude } = pos.coords;
+      setMapCenter({ lat: latitude, lng: longitude });
+
+      try {
+        const res = await fetch(
+          `http://localhost:8000/api/etablissements/nearby?lat=${latitude}&lng=${longitude}&radius=5000`
+        );
+        if (!res.ok) throw new Error("Erreur API");
+        const data = await res.json();
+        
+        setRealEtablissements(data); // Met à jour la liste principale
+        showToast(`✅ ${data.length} établissement(s) trouvé(s) près de vous`, "success");
+      } catch (err) {
+        console.error(err);
+        showToast("Impossible de charger les établissements proches", "error");
+      } finally {
+        setGeoLoading(false);
+      }
+    },
+    (err) => {
+      console.error(err);
+      setMapCenter({ lat: 33.5731, lng: -7.5898 });
+      showToast("Accès à la localisation refusé", "info");
+      setGeoLoading(false);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+};
 
   const handleLogin = () => { if (!loginEmail || !loginPass) return showToast("Veuillez remplir tous les champs", "error"); setIsLoggedIn(true); setUserName(loginEmail.split("@")[0]); setShowAuthModal(false); showToast("Connexion réussie ! Bienvenue 🎉", "success"); };
   const handleRegister = () => { if (!regName || !regEmail || !regPass) return showToast("Veuillez remplir tous les champs", "error"); setIsLoggedIn(true); setUserName(regName); setShowAuthModal(false); showToast("Compte créé avec succès ! Bienvenue 🎉", "success"); };
@@ -90,27 +120,28 @@ export default function App() {
     return { x: ((e.longitude + 13) / 12) * (w - 60) + 20, y: ((36 - e.latitude) / 6) * (h - 60) + 20 };
   };
 
-  const renderPage = () => {
-    // Si on charge encore, on affiche un petit message ou rien
-    if (isLoading) return <div style={{ textAlign: "center", padding: "50px" }}>Chargement des établissements...</div>;
+ const renderPage = () => {
+  if (isLoading) return <div style={{ textAlign: "center", padding: "50px" }}>Chargement des établissements...</div>;
 
-    const common = { 
-      searchQuery, setSearchQuery, 
-      activeFilters, setActiveFilters,
-      activeStatusFilter, setActiveStatusFilter, 
-      filteredEtablissements, handleFilterToggle, 
-      handleNearMe, geoLoading, mapCenter, mapRef, 
-      getMarkerPosition, hoveredMarker, setHoveredMarker, 
-      openDetail, isLoggedIn, userName, setShowAuthModal 
-    };
-    
-    switch(currentPage) {
-      case "home": return <HomePage {...common} setCurrentPage={setCurrentPage} />;
-      case "map": return <MapPage {...common} setCurrentPage={setCurrentPage} />;
-      case "list": return <ListPage {...common} />;
-      default: return null;
-    }
+  const common = { 
+    searchQuery, setSearchQuery, 
+    activeFilters, setActiveFilters,
+    activeStatusFilter, setActiveStatusFilter, 
+    filteredEtablissements, handleFilterToggle, 
+    handleNearMe, geoLoading, mapCenter, mapRef, 
+    getMarkerPosition, hoveredMarker, setHoveredMarker, 
+    openDetail, isLoggedIn, userName, setShowAuthModal 
   };
+  
+  switch(currentPage) {
+    case "home": return <HomePage {...common} setCurrentPage={setCurrentPage} />;
+    case "map": return <MapPage {...common} setCurrentPage={setCurrentPage} />;
+    case "list": return <ListPage {...common} />;
+    // ✅ AJOUTER CETTE LIGNE :
+    case "near-me": return <NearMePage {...common} />;
+    default: return null;
+  }
+};
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -118,8 +149,20 @@ export default function App() {
       <main style={{ flex: 1 }}>{renderPage()}</main>
       <Footer />
       <DetailModal show={showDetailModal} setShow={setShowDetailModal} selected={selectedEtablissement} isLoggedIn={isLoggedIn} setShowAuth={setShowAuthModal} userRating={userRating} setUserRating={setUserRating} reviewText={reviewText} setReviewText={setReviewText} handleSubmitReview={handleSubmitReview} />
-      <AuthModal show={showAuthModal} setShow={setShowAuthModal} authTab={authTab} setAuthTab={setAuthTab} loginEmail={loginEmail} setLoginEmail={setLoginEmail} loginPass={loginPass} setLoginPass={setLoginPass} handleLogin={handleLogin} regName={regName} setRegName={setRegName} regEmail={regEmail} setRegEmail={setRegEmail} regPass={regPass} setRegPass={setRegPass} handleRegister={handleRegister} />
-      <AnimatePresence>{toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}</AnimatePresence>
+
+<AuthModal 
+  show={showAuthModal}
+  setShow={setShowAuthModal}
+  onAuthSuccess={(user) => {
+    // ✅ Met à jour l'état global d'auth
+    setIsLoggedIn(true);
+    setUserName(user.nom);
+    // Optionnel : stocke l'user complet
+    // setUser(user);
+  }}
+  showToast={showToast}
+/>
+   <AnimatePresence>{toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}</AnimatePresence>
     </div>
   );
 }

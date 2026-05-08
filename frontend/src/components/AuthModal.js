@@ -1,170 +1,156 @@
-import React, { useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState } from 'react';
+import { Eye, EyeOff, User, Mail, Lock } from 'lucide-react';
 
-export default function AuthModal({ show, setShow, authTab, setAuthTab, loginEmail, setLoginEmail, loginPass, setLoginPass, handleLogin, regName, setRegName, regEmail, setRegEmail, regPass, setRegPass, handleRegister }) {
-  const firstInputRef = useRef(null);
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api';
 
-  // Force le focus sur le premier champ à l'ouverture
-  useEffect(() => {
-    if (show && firstInputRef.current) {
-      setTimeout(() => firstInputRef.current?.focus(), 150);
-    }
-  }, [show, authTab]);
+export default function AuthModal({ show, setShow, onAuthSuccess, showToast }) {
+  const [authTab, setAuthTab] = useState('login');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ nom: '', email: '', password: '', confirmPassword: '' });
+  const [errors, setErrors] = useState({});
 
   if (!show) return null;
 
+  const handleChange = (form, setForm) => (e) => {
+    const { name, value } = e.target;
+    setForm(prev => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+  };
+
+  const validate = (form, isLogin) => {
+    const newErrors = {};
+    if (!isLogin && !form.nom?.trim()) newErrors.nom = 'Nom requis';
+    if (!form.email?.trim()) newErrors.email = 'Email requis';
+    else if (!/\S+@\S+\.\S+/.test(form.email)) newErrors.email = 'Email invalide';
+    if (!form.password) newErrors.password = 'Mot de passe requis';
+    else if (form.password.length < 6) newErrors.password = 'Minimum 6 caractères';
+    if (!isLogin && form.password !== form.confirmPassword) {
+      newErrors.confirmPassword = 'Les mots de passe ne correspondent pas';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // ✅ APPEL RÉEL À TON BACKEND FASTAPI
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const isLogin = authTab === 'login';
+    
+    if (!validate(isLogin ? loginForm : registerForm, isLogin)) return;
+    
+    try {
+      setLoading(true);
+      const endpoint = isLogin ? '/auth/login' : '/auth/register';
+      
+      // ✅ CORRECTION : Utiliser "mot_de_passe" pour login ET register (comme ton backend)
+      const payload = {
+        email: isLogin ? loginForm.email : registerForm.email,
+        mot_de_passe: isLogin ? loginForm.password : registerForm.password,
+        ...( !isLogin && { nom: registerForm.nom } )
+      };
+
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.detail?.[0]?.msg || data.detail || data.message || 'Erreur serveur');
+      }
+
+      // ✅ Sauvegarde du token JWT
+      if (data.access_token) {
+        localStorage.setItem('token', data.access_token);
+      }
+
+      // ✅ Mise à jour état parent
+      if (onAuthSuccess && data.user) {
+        onAuthSuccess(data.user);
+      }
+
+      showToast(isLogin ? '✅ Connexion réussie !' : '✅ Compte créé !', 'success');
+      
+      // Reset + fermeture
+      setLoginForm({ email: '', password: '' });
+      setRegisterForm({ nom: '', email: '', password: '', confirmPassword: '' });
+      setShow(false);
+      
+    } catch (err) {
+      console.error('Auth error:', err);
+      setErrors({ submit: err.message || 'Une erreur est survenue' });
+      showToast('❌ ' + err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
-      {/* 1. Backdrop séparé avec z-index et pointer-events corrects */}
-      <div 
-        className="modal-backdrop fade show" 
-        style={{ zIndex: 1040, pointerEvents: 'auto' }}
-        onClick={() => setShow(false)} 
-      />
-      
-      {/* 2. Modale au-dessus du backdrop */}
-      <div 
-        className="modal fade show" 
-        style={{ display: 'block', zIndex: 1050, pointerEvents: 'none' }} 
-        tabIndex="-1"
-      >
-        <div className="modal-dialog modal-dialog-centered modal-saha" style={{ pointerEvents: 'auto' }}>
-          <div className="modal-content">
-            <div className="modal-header">
-              <button type="button" className="btn-close" onClick={() => setShow(false)} aria-label="Close" />
+      <div className="modal-backdrop fade show" style={{ zIndex: 1040, background: 'rgba(0,0,0,0.5)' }} onClick={() => setShow(false)} />
+      <div className="modal fade show" style={{ display: 'block', zIndex: 1050 }} tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content border-0 shadow-lg rounded-3">
+            <div className="modal-header border-0 pb-0">
+              <button type="button" className="btn-close" onClick={() => setShow(false)} aria-label="Fermer" />
             </div>
-            
-            <div className="modal-body" style={{ padding: "0 2rem 2rem" }}>
-              <div className="text-center mb-4">
-                <h3 className="mb-1" style={{ fontFamily: "Poppins", fontWeight: 800 }}>
-                  SA<span style={{ color: "var(--primary)" }}>HA</span>
-                </h3>
-                <p style={{ color: "var(--gray-500)", fontSize: "0.9rem" }}>
-                  {authTab === "login" ? "Bon retour parmi nous !" : "Créez votre compte gratuitement"}
-                </p>
+            <div className="modal-body pt-0 px-4 pb-4">
+              <div className="d-flex rounded-pill bg-light p-1 mb-4" style={{ maxWidth: '300px', margin: '0 auto' }}>
+                <button className={`flex-fill py-2 rounded-pill text-sm fw-medium transition-all ${authTab === 'login' ? 'bg-white shadow text-primary' : 'text-muted'}`} onClick={() => { setAuthTab('login'); setErrors({}); }}>Connexion</button>
+                <button className={`flex-fill py-2 rounded-pill text-sm fw-medium transition-all ${authTab === 'register' ? 'bg-white shadow text-primary' : 'text-muted'}`} onClick={() => { setAuthTab('register'); setErrors({}); }}>Inscription</button>
               </div>
-
-              <div className="auth-tabs">
-                <button className={`auth-tab ${authTab === "login" ? "active" : ""}`} onClick={() => setAuthTab("login")}>Connexion</button>
-                <button className={`auth-tab ${authTab === "register" ? "active" : ""}`} onClick={() => setAuthTab("register")}>Inscription</button>
-              </div>
-
-              <AnimatePresence mode="wait">
-                {authTab === "login" ? (
-                  <motion.div key="login" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-                    <div className="mb-3">
-                      <label className="form-label-custom">Adresse email</label>
-                      <div className="position-relative">
-                        <i className="bi bi-envelope position-absolute" style={{ left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--gray-500)" }} />
-                        <input 
-                          ref={firstInputRef}
-                          type="email" 
-                          className="form-control-custom" 
-                          style={{ paddingLeft: 42 }} 
-                          placeholder="votre@email.com" 
-                          value={loginEmail} 
-                          onChange={e => setLoginEmail(e.target.value)} 
-                        />
-                      </div>
+              {errors.submit && <div className="alert alert-danger py-2 mb-3 small">{errors.submit}</div>}
+              <form onSubmit={handleSubmit} className="space-y-3">
+                {authTab === 'register' && (
+                  <div>
+                    <label className="small text-muted mb-1">Nom complet</label>
+                    <div className="input-group">
+                      <span className="input-group-text bg-light border-end-0"><User size={16} className="text-muted" /></span>
+                      <input type="text" name="nom" value={registerForm.nom} onChange={handleChange(registerForm, setRegisterForm)} className={`form-control border-start-0 ${errors.nom ? 'is-invalid' : ''}`} placeholder="Votre nom" />
                     </div>
-                    <div className="mb-3">
-                      <label className="form-label-custom">Mot de passe</label>
-                      <div className="position-relative">
-                        <i className="bi bi-lock position-absolute" style={{ left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--gray-500)" }} />
-                        <input 
-                          type="password" 
-                          className="form-control-custom" 
-                          style={{ paddingLeft: 42 }} 
-                          placeholder="••••••••" 
-                          value={loginPass} 
-                          onChange={e => setLoginPass(e.target.value)} 
-                        />
-                      </div>
-                    </div>
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <div className="form-check">
-                        <input className="form-check-input" type="checkbox" id="rememberMe" />
-                        <label className="form-check-label" htmlFor="rememberMe" style={{ fontSize: "0.85rem", color: "var(--gray-500)" }}>Se souvenir de moi</label>
-                      </div>
-                      <a href="#" style={{ fontSize: "0.85rem", color: "var(--primary)", textDecoration: "none" }}>Mot de passe oublié ?</a>
-                    </div>
-                    <button className="btn btn-submit mb-3" onClick={handleLogin}>
-                      <i className="bi bi-box-arrow-in-right me-2" />Se connecter
-                    </button>
-                  </motion.div>
-                ) : (
-                  <motion.div key="register" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                    <div className="mb-3">
-                      <label className="form-label-custom">Nom complet</label>
-                      <div className="position-relative">
-                        <i className="bi bi-person position-absolute" style={{ left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--gray-500)" }} />
-                        <input 
-                          type="text" 
-                          className="form-control-custom" 
-                          style={{ paddingLeft: 42 }} 
-                          placeholder="Votre nom" 
-                          value={regName} 
-                          onChange={e => setRegName(e.target.value)} 
-                        />
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label-custom">Adresse email</label>
-                      <div className="position-relative">
-                        <i className="bi bi-envelope position-absolute" style={{ left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--gray-500)" }} />
-                        <input 
-                          type="email" 
-                          className="form-control-custom" 
-                          style={{ paddingLeft: 42 }} 
-                          placeholder="votre@email.com" 
-                          value={regEmail} 
-                          onChange={e => setRegEmail(e.target.value)} 
-                        />
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label-custom">Mot de passe</label>
-                      <div className="position-relative">
-                        <i className="bi bi-lock position-absolute" style={{ left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--gray-500)" }} />
-                        <input 
-                          type="password" 
-                          className="form-control-custom" 
-                          style={{ paddingLeft: 42 }} 
-                          placeholder="Minimum 8 caractères" 
-                          value={regPass} 
-                          onChange={e => setRegPass(e.target.value)} 
-                        />
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <div className="form-check">
-                        <input className="form-check-input" type="checkbox" id="terms" />
-                        <label className="form-check-label" htmlFor="terms" style={{ fontSize: "0.85rem", color: "var(--gray-500)" }}>
-                          J'accepte les <a href="#" style={{ color: "var(--primary)" }}>conditions d'utilisation</a>
-                        </label>
-                      </div>
-                    </div>
-                    <button className="btn btn-submit mb-3" onClick={handleRegister}>
-                      <i className="bi bi-person-plus me-2" />Créer mon compte
-                    </button>
-                  </motion.div>
+                    {errors.nom && <div className="invalid-feedback d-block small">{errors.nom}</div>}
+                  </div>
                 )}
-              </AnimatePresence>
-
-              <div className="text-center">
-                <div className="d-flex align-items-center gap-3 mb-3">
-                  <hr className="flex-grow-1" style={{ borderColor: "var(--gray-200)" }} />
-                  <span style={{ fontSize: "0.8rem", color: "var(--gray-500)" }}>ou continuer avec</span>
-                  <hr className="flex-grow-1" style={{ borderColor: "var(--gray-200)" }} />
+                <div>
+                  <label className="small text-muted mb-1">Email</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><Mail size={16} className="text-muted" /></span>
+                    <input type="email" name="email" value={authTab === 'login' ? loginForm.email : registerForm.email} onChange={handleChange(authTab === 'login' ? loginForm : registerForm, authTab === 'login' ? setLoginForm : setRegisterForm)} className={`form-control border-start-0 ${errors.email ? 'is-invalid' : ''}`} placeholder="vous@exemple.com" />
+                  </div>
+                  {errors.email && <div className="invalid-feedback d-block small">{errors.email}</div>}
                 </div>
-                <div className="d-flex justify-content-center gap-2">
-                  <button className="btn btn-outline-light rounded-pill px-4" style={{ color: "var(--gray-700)", borderColor: "var(--gray-200)" }}>
-                    <i className="bi bi-google me-2" />Google
-                  </button>
-                  <button className="btn btn-outline-light rounded-pill px-4" style={{ color: "var(--gray-700)", borderColor: "var(--gray-200)" }}>
-                    <i className="bi bi-facebook me-2" />Facebook
-                  </button>
+                <div>
+                  <label className="small text-muted mb-1">Mot de passe</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-light border-end-0"><Lock size={16} className="text-muted" /></span>
+                    <input type={showPassword ? 'text' : 'password'} name="password" value={authTab === 'login' ? loginForm.password : registerForm.password} onChange={handleChange(authTab === 'login' ? loginForm : registerForm, authTab === 'login' ? setLoginForm : setRegisterForm)} className={`form-control border-start-0 ${errors.password ? 'is-invalid' : ''}`} placeholder="••••••••" />
+                    <button type="button" className="btn btn-outline-secondary border-start-0" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                  </div>
+                  {errors.password && <div className="invalid-feedback d-block small">{errors.password}</div>}
                 </div>
+                {authTab === 'register' && (
+                  <div>
+                    <label className="small text-muted mb-1">Confirmer le mot de passe</label>
+                    <input type="password" name="confirmPassword" value={registerForm.confirmPassword} onChange={handleChange(registerForm, setRegisterForm)} className={`form-control ${errors.confirmPassword ? 'is-invalid' : ''}`} placeholder="••••••••" />
+                    {errors.confirmPassword && <div className="invalid-feedback d-block small">{errors.confirmPassword}</div>}
+                  </div>
+                )}
+                <button type="submit" className="btn btn-primary w-100 mt-3" disabled={loading}>
+                  {loading ? <><span className="spinner-border spinner-border-sm me-2" role="status" />Traitement...</> : authTab === 'login' ? 'Se connecter' : "S'inscrire"}
+                </button>
+              </form>
+              <div className="text-center mt-4 pt-3 border-top">
+                <small className="text-muted">
+                  {authTab === 'login' ? "Pas encore de compte ? " : "Déjà un compte ? "}
+                  <button className="btn btn-link p-0 text-primary fw-medium" onClick={() => { setAuthTab(authTab === 'login' ? 'register' : 'login'); setErrors({}); }}>
+                    {authTab === 'login' ? "Créer un compte" : "Se connecter"}
+                  </button>
+                </small>
               </div>
             </div>
           </div>
