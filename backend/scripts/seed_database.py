@@ -1,131 +1,90 @@
 import os
 import sys
-import io
 import csv
 import openpyxl
+import io
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# ✅ Force Python à trouver le dossier 'app'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+backend_dir = os.path.dirname(current_dir)
+sys.path.insert(0, backend_dir)
 
 from app.database import SessionLocal, engine, Base
 from app.models import Establishment, EstablishmentType, EstablishmentStatus
 
-def seed_database():
-    print("🔄 Connexion à PostgreSQL...")
-    Base.metadata.create_all(bind=engine)
-    print("✅ Tables prêtes.")
-
-    file_path = "data_hopitaux.csv"
-    if not os.path.exists(file_path):
-        print("❌ Fichier introuvable.")
-        return
-
-    with open(file_path, 'rb') as f:
-        raw_bytes = f.read()
-
-    is_excel = raw_bytes.startswith(b'PK\x03\x04')
-    
-    session = SessionLocal()
-    count = 0
-
+def seed_hopitaux():
+    print("🔄 [1/3] Connexion à PostgreSQL et création des tables...")
     try:
+        Base.metadata.create_all(bind=engine)
+        print("✅ Tables vérifiées/créées.")
+    except Exception as e:
+        print(f"❌ Erreur connexion/tables : {e}")
+        sys.exit(1)
+
+    session = SessionLocal()
+    csv_path = os.path.join(current_dir, "data_hopitaux.csv")
+    
+    if not os.path.exists(csv_path):
+        print(f"❌ Fichier introuvable : {csv_path}")
+        print("💡 Vérifie qu'il s'appelle exactement 'data_hopitaux.csv' et qu'il est dans le dossier 'scripts/'.")
+        session.close()
+        sys.exit(1)
+
+    print(f"📂 [2/3] Lecture de : {os.path.basename(csv_path)}")
+    inserted = 0
+    
+    try:
+        with open(csv_path, 'rb') as f:
+            raw = f.read()
+        
+        is_excel = raw.startswith(b'PK\x03\x04')
+        
         if is_excel:
-            print("📦 Format détecté : Fichier Excel (contournement de l'extension .csv)")
-            wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
+            wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
             ws = wb.active
-
-            header_row = None
-            start_idx = 1
-            for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=15, values_only=True), start=1):
-                if row and any("Etablissement" in str(cell) for cell in row if cell):
-                    header_row = [str(cell).strip().lower() for cell in row if cell]
-                    start_idx = r_idx + 1
-                    print(f"📋 En-têtes trouvés ligne {r_idx} : {header_row}")
-                    break
-
-            if not header_row:
-                raise ValueError("Impossible de trouver la ligne d'en-têtes dans le fichier.")
-
-            col_map = {}
-            for i, h in enumerate(header_row):
-                if "etablissement" in h:
-                    col_map['nom'] = i
-                elif "région" in h or "region" in h:
-                    col_map['region'] = i
-                elif "delegation" in h:
-                    col_map['delegation'] = i
-                elif "commune" in h:
-                    col_map['commune'] = i
-
-            print(f"🗺️ Colonnes mappées : {col_map}")
-
-            for row in ws.iter_rows(min_row=start_idx, values_only=True):
-                if not row or len(row) <= col_map.get('nom', 0):
-                    continue
+            start_row = 2  # Suppose ligne 1 = en-têtes
+            for row in ws.iter_rows(min_row=start_row, values_only=True):
+                if not row or not row[3]: continue  # Colonne D = Nom
+                nom = str(row[3]).strip()
+                region = str(row[0]) if row[0] else ""
+                delegation = str(row[1]) if row[1] else ""
+                commune = str(row[2]) if row[2] else ""
                 
-                nom = row[col_map.get('nom', 0)]
-                if not nom or str(nom).strip() == "":
-                    continue
-
-                region = row[col_map.get('region', 0)] if 'region' in col_map else ""
-                delegation = row[col_map.get('delegation', 0)] if 'delegation' in col_map else ""
-                commune = row[col_map.get('commune', 0)] if 'commune' in col_map else ""
-
                 session.add(Establishment(
-                    nom=str(nom).strip(),
+                    nom=nom,
                     type=EstablishmentType.hopital,
                     adresse=f"{commune}, {delegation}, {region}".strip(),
                     latitude=31.7917,
                     longitude=-7.0926,
                     etat=EstablishmentStatus.ouvert
                 ))
-                count += 1
-                if count % 50 == 0:
-                    session.commit()
-                    print(f"   ... {count} établissements insérés")
-
+                inserted += 1
         else:
-            print("📄 Format détecté : CSV classique")
-            decoded = None
-            for enc in ['utf-8-sig', 'cp1252', 'latin-1']:
-                try:
-                    decoded = raw_bytes.decode(enc)
-                    break
-                except Exception:
-                    continue
-            
-            if not decoded:
-                raise ValueError("Impossible de décoder le fichier CSV.")
+            # Fallback CSV
+            with open(csv_path, 'r', encoding='utf-8-sig') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    nom = row.get('Etablissement hospitalier') or row.get('etablissement') or row.get('nom')
+                    if not nom: continue
+                    session.add(Establishment(
+                        nom=nom.strip(),
+                        type=EstablishmentType.hopital,
+                        adresse=f"{row.get('commune','')}, {row.get('delegation','')}, {row.get('région','')}",
+                        latitude=31.7917,
+                        longitude=-7.0926,
+                        etat=EstablishmentStatus.ouvert
+                    ))
+                    inserted += 1
 
-            reader = csv.DictReader(io.StringIO(decoded))
-            if reader.fieldnames:
-                reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
-
-            for row in reader:
-                nom = row.get('etablissement hospitalier') or row.get('etablissement')
-                if not nom or nom.strip() == "":
-                    continue
-
-                session.add(Establishment(
-                    nom=nom.strip(),
-                    type=EstablishmentType.hopital,
-                    adresse=f"{row.get('commune','')}, {row.get('delegation','')}, {row.get('région','')}",
-                    latitude=31.7917,
-                    longitude=-7.0926,
-                    etat=EstablishmentStatus.ouvert
-                ))
-                count += 1
-                if count % 50 == 0:
-                    session.commit()
-                    print(f"   ... {count} établissements insérés")
-
+        print(f"📤 [3/3] Envoi de {inserted} lignes vers PostgreSQL...")
         session.commit()
-        print(f"\n🎉 SUCCÈS ! {count} établissements ajoutés à PostgreSQL.")
-
+        print(f"🎉 SUCCÈS ! {inserted} hôpitaux ajoutés définitivement dans la table 'establishments'.")
+        
     except Exception as e:
-        print(f"❌ Échec critique : {e}")
         session.rollback()
+        print(f"❌ ÉCHEC : {e}")
     finally:
         session.close()
 
 if __name__ == "__main__":
-    seed_database()
+    seed_hopitaux()

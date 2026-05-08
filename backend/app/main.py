@@ -1,22 +1,35 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-# ⬇️ Ajoute cet import
+
+# ✅ Import du routeur (chemin relatif correct)
 from app.routers import etablissements
+from app.routers import stats  # ✅ AJOUTE CETTE LIGNE
 
-app = FastAPI(title="SAHA API")
+app = FastAPI(title="SAHA API", version="1.0")
 
-# Configuration CORS (pour autoriser React à parler au backend)
+# ✅ CORS : autorise le frontend React à appeler le backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # En prod, mets ["http://localhost:3000"]
+    allow_origins=["*"],  # En prod : ["http://localhost:3000"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ⬇️ Inclus le routeur
-app.include_router(etablissements.router, prefix="/api")
+# ✅ ENREGISTREMENT DU ROUTEUR (C'EST ICI QUE ÇA SE JOUE)
+app.include_router(
+    etablissements.router,
+    prefix="/api",  # Toutes les routes auront /api en préfixe
+    tags=["Établissements"]
+)
+app.include_router(stats.router, prefix="/api")  
 
+# Route de test
 @app.get("/")
-def read_root():
-    return {"message": "API SAHA est en ligne 🚀"}
+def root():
+    return {"message": "🚀 SAHA API is running", "docs": "/docs"}
+
+# Route de santé
+@app.get("/health")
+def health():
+    return {"status": "ok"}
