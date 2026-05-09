@@ -37,3 +37,4 @@ if __name__ == "__main__":
     # Télécharge automatiquement les fichiers officiels
     download_by_search("pharmacie maroc annuaire", "data_pharmacies.csv")
     download_by_search("clinique privé santé maroc", "data_cliniques.csv")
+    
