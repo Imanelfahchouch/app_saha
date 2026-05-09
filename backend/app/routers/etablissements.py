@@ -55,7 +55,7 @@ def get_all(
         })
     return output
 
-# ✅ ROUTE /nearby DÉPLACÉE ICI (AVANT /{etab_id})
+# ✅ ROUTE /nearby REMPLACÉE (formule Haversine - compatible PostgreSQL standard)
 @router.get("/etablissements/nearby")
 def get_nearby_etablissements(
     lat: float = Query(..., ge=-90, le=90),
@@ -64,32 +64,69 @@ def get_nearby_etablissements(
     type: Optional[str] = Query(default=None),
     db: Session = Depends(get_db)
 ):
-    from sqlalchemy import func
-    user_point = func.ST_SetSRID(func.ST_MakePoint(lng, lat), 4326)
-    etab_point = func.ST_SetSRID(func.ST_MakePoint(Establishment.longitude, Establishment.latitude), 4326)
-    dist = func.ST_DistanceSphere(etab_point, user_point).label("dist_meters")
+    """
+    Retourne les établissements dans un rayon donné (formule de Haversine).
+    Compatible PostgreSQL standard (sans PostGIS).
+    """
+    from sqlalchemy import text
+
+    # Formule de Haversine en SQL pur (rayon Terre = 6371 km) → distance en MÈTRES
+    haversine = """
+        (6371 * acos(
+            cos(radians(:lat)) * 
+            cos(radians(latitude)) * 
+            cos(radians(longitude) - radians(:lng)) + 
+            sin(radians(:lat)) * 
+            sin(radians(latitude))
+        )) * 1000
+    """
     
-    query = db.query(Establishment, dist).filter(
-        dist <= radius,
-        Establishment.latitude.isnot(None),
-        Establishment.longitude.isnot(None)
-    )
+    query = text(f"""
+        SELECT 
+            id, nom, type, adresse, latitude, longitude, etat, phone, website, 
+            description, opening_hours,
+            {haversine} AS distance_meters
+        FROM etablissement
+        WHERE latitude IS NOT NULL 
+          AND longitude IS NOT NULL
+          AND {haversine} <= :radius
+    """)
+    
+    # Ajout du filtre type si présent
     if type and type.strip():
-        query = query.filter(Establishment.type == type.strip().lower())
-        
-    results = query.order_by("dist_meters").all()
+        query = text(str(query) + " AND type = :type_filter")
+        params = {
+            "lat": lat, "lng": lng, "radius": radius,
+            "type_filter": type.strip().lower()
+        }
+    else:
+        params = {"lat": lat, "lng": lng, "radius": radius}
+    
+    result = db.execute(query, params)
+    rows = result.fetchall()
+    
+    # Formatage de la réponse
     output = []
-    for item in results:
-        etab = item.Establishment
-        type_val = etab.type.value if hasattr(etab.type, 'value') else etab.type
-        etat_val = etab.etat.value if hasattr(etab.etat, 'value') else etab.etat
+    for row in rows:
+        type_val = row.type.value if hasattr(row.type, 'value') else row.type
+        etat_val = row.etat.value if hasattr(row.etat, 'value') else row.etat
         output.append({
-            "id": etab.id, "nom": etab.nom, "type": type_val, "adresse": etab.adresse,
-            "latitude": float(etab.latitude) if etab.latitude else 0.0,
-            "longitude": float(etab.longitude) if etab.longitude else 0.0,
-            "etat": etat_val, "phone": etab.phone, "rating": 0, "reviews": 0,
-            "distance": round(item.dist_meters, 1) if item.dist_meters else None
+            "id": row.id,
+            "nom": row.nom,
+            "type": type_val,
+            "adresse": row.adresse,
+            "latitude": float(row.latitude) if row.latitude else 0.0,
+            "longitude": float(row.longitude) if row.longitude else 0.0,
+            "etat": etat_val,
+            "phone": row.phone,
+            "rating": 0,
+            "reviews": 0,
+            "distance": round(row.distance_meters, 1) if row.distance_meters else None
         })
+    
+    # Tri par distance croissante
+    output.sort(key=lambda x: x["distance"] if x["distance"] else float('inf'))
+    
     return output
 
 @router.get("/etablissements/{etab_id}")

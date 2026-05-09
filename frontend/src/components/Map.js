@@ -75,24 +75,36 @@ export default function Map({ filteredEtablissements, openDetail, userLocation, 
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             
-            {/* ✅ Marqueur position utilisateur (MÊME style que Google Maps) */}
+            {/* ✅ Marqueur position utilisateur AVEC ANIMATION PULSE */}
             {userLocation && (
               <Marker 
-                position={[userLocation.lat, userLocation.lng]} 
-                title="Votre position"
+                position={[userLocation.lat, userLocation.lng]}
                 icon={L.divIcon({
-                  className: 'custom-user-marker',
+                  className: 'user-location-marker',
                   html: `<div style="
-                    width: 32px; height: 32px; 
+                    width: 20px; 
+                    height: 20px; 
                     background: #0EA5E9; 
-                    border: 3px solid #fff; 
+                    border: 3px solid white; 
                     border-radius: 50%; 
                     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                  "></div>`,
-                  iconSize: [32, 32],
-                  iconAnchor: [16, 16]
+                    animation: pulse 2s infinite;
+                  "></div>
+                  <style>
+                    @keyframes pulse {
+                      0% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.7); }
+                      70% { box-shadow: 0 0 0 10px rgba(14, 165, 233, 0); }
+                      100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); }
+                    }
+                  </style>`,
+                  iconSize: [20, 20],
+                  iconAnchor: [10, 10]
                 })}
-              />
+              >
+                <Popup>
+                  <strong>📍 Votre position</strong>
+                </Popup>
+              </Marker>
             )}
 
             {/* ✅ Marqueurs établissements (MÊME rendu que Google Maps) */}

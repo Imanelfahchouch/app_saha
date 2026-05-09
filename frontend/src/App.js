@@ -141,7 +141,8 @@ export default function App() {
       filteredEtablissements, handleFilterToggle, 
       handleNearMe, geoLoading, mapCenter, mapRef, 
       getMarkerPosition, hoveredMarker, setHoveredMarker, 
-      openDetail, isLoggedIn, userName, setShowAuthModal 
+      openDetail, isLoggedIn, userName, setShowAuthModal ,
+      showToast
     };
     
     switch(currentPage) {

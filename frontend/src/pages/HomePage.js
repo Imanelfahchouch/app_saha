@@ -7,16 +7,12 @@ import EstablishmentCard from '../components/EstablishmentCard.js';
 export default function HomePage(props) {
   return (
     <>
-      {/* Hero Section */}
-      <Hero {...props} />
+      {/* ✅ Masque le bouton Near Me sur l'accueil uniquement */}
+      <Hero {...props} showNearMe={false} />
       
-      {/* Stats Section (calculs réels depuis /api/stats) */}
       <Stats />
-      
-      {/* Carte interactive */}
       <Map {...props} />
       
-      {/* Liste des établissements */}
       <section className="py-5">
         <div className="container">
           <div className="d-flex justify-content-between align-items-center mb-4">
