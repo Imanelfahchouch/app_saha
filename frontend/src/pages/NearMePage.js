@@ -1,172 +1,316 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import { MapPin, AlertCircle, Filter, RefreshCw } from 'lucide-react'; // ✅ Loader2 et EstablishmentCard retirés
-import { fetchNearbyEstablishments } from '../services/api';
 
-const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_KEY;
-const DEFAULT_RADIUS = 5000;
-
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_KEY || 'TA_CLE_API_ICI';
 const containerStyle = { width: '100%', height: '500px', borderRadius: '16px' };
 
-export default function NearMePage({ mapCenter: propMapCenter }) {
-  const { isLoaded } = useJsApiLoader({ googleMapsApiKey: GOOGLE_MAPS_API_KEY, libraries: ['places'] });
-  
-  const [userLocation, setUserLocation] = useState(null);
+// Position initiale : Taza
+const DEFAULT_CENTER = { lat: 34.2167, lng: -4.0167 };
+const DEFAULT_ZOOM = 12;
+
+export default function NearMePage() {
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: ['places']
+  });
+
+  // ✅ Ref directe sur l'instance Google Maps
+  const mapRef = useRef(null);
+
   const [establishments, setEstablishments] = useState([]);
+  const [userLocation, setUserLocation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [radius, setRadius] = useState(DEFAULT_RADIUS);
-  const [filterType, setFilterType] = useState('');
   const [selected, setSelected] = useState(null);
-  const [mapCenter, setMapCenter] = useState(propMapCenter || { lat: 33.5731, lng: -7.5898 });
+  const [radius, setRadius] = useState(5000);
+  const [filterType, setFilterType] = useState('');
 
-  // ✅ Fonction extraite et mémorisée
-  const fetchNearby = useCallback(async ({ lat, lng, radius, type }) => {
+  // ✅ Callback appelé quand la carte est montée — on stocke l'instance
+  const onMapLoad = useCallback((map) => {
+    mapRef.current = map;
+  }, []);
+
+  // ✅ Fonction pour déplacer la carte sans la remonter
+  const moveMap = useCallback((lat, lng, zoom = 15) => {
+    if (mapRef.current) {
+      mapRef.current.panTo({ lat, lng });
+      mapRef.current.setZoom(zoom);
+    }
+  }, []);
+
+  const fetchEstablishments = useCallback(async (lat, lng, rad, type) => {
     try {
-      const data = await fetchNearbyEstablishments({ lat, lng, radius, type });
+      const params = new URLSearchParams();
+      if (lat && lng) {
+        params.append('lat', lat);
+        params.append('lng', lng);
+        params.append('radius', rad || 5000);
+      }
+      if (type) params.append('type', type);
+
+      const res = await fetch(`http://localhost:8000/api/etablissements?${params.toString()}`);
+      if (!res.ok) throw new Error('Erreur réseau');
+      const data = await res.json();
+
+      console.log('✅ Établissements reçus:', data.length);
       setEstablishments(data);
     } catch (err) {
-      setError('Erreur lors du chargement des établissements');
+      setError('Erreur lors du chargement des données');
       console.error(err);
     }
-  }, []); // ✅ Pas de dépendances externes
+  }, []);
 
-  const getUserLocation = useCallback(() => {
+  const handleNearMe = () => {
     if (!navigator.geolocation) {
-      setError('Géolocalisation non supportée');
+      setError('Géolocalisation non supportée par votre navigateur');
       return;
     }
+
     setLoading(true);
     setError(null);
+
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        const loc = { lat: latitude, lng: longitude };
-        setUserLocation(loc);
-        setMapCenter(loc);
-        await fetchNearby({ ...loc, radius, type: filterType });
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        console.log('📍 Position GPS:', latitude, longitude);
+
+        const userLoc = { lat: latitude, lng: longitude };
+        setUserLocation(userLoc);
+
+        // ✅ Déplacer la carte via la ref — pas via setState
+        moveMap(latitude, longitude, 15);
+
+        // ✅ Charger les établissements proches
+        await fetchEstablishments(latitude, longitude, radius, filterType);
         setLoading(false);
       },
       (err) => {
-        console.error(err);
-        setError(err.code === 1 ? 'Accès refusé' : 'Position introuvable');
+        console.error('Erreur géolocalisation:', err);
+        setError(
+          err.code === 1
+            ? 'Accès à la position refusé. Autorisez la géolocalisation dans votre navigateur.'
+            : 'Position introuvable. Réessayez.'
+        );
         setLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
-  }, [fetchNearby, radius, filterType]); // ✅ Dépendances déclarées
+  };
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = () => {
     if (userLocation) {
-      fetchNearby({ ...userLocation, radius, type: filterType });
+      fetchEstablishments(userLocation.lat, userLocation.lng, radius, filterType);
     } else {
-      getUserLocation();
+      fetchEstablishments();
     }
-  }, [userLocation, radius, filterType, fetchNearby, getUserLocation]);
+  };
 
-  const filtered = establishments.filter(e => 
-    !filterType || e.type === filterType
-  ).sort((a, b) => a.distance - b.distance);
-
-  const mapOptions = useMemo(() => ({
-    disableDefaultUI: false,
-    zoomControl: true,
-    mapTypeControl: false,
-    styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
-  }), []);
-
-  // ✅ useEffect avec dépendance correcte
+  // ✅ Re-fetch quand le rayon ou le type change (si position déjà connue)
   useEffect(() => {
-    getUserLocation();
-  }, [getUserLocation]);
+    if (userLocation) {
+      fetchEstablishments(userLocation.lat, userLocation.lng, radius, filterType);
+    }
+  }, [radius, filterType]);
 
-  if (!isLoaded) return <div className="p-8 text-center">Chargement de la carte...</div>;
+  if (loadError) return (
+    <div className="p-8 text-center text-red-600">
+      Erreur de chargement Google Maps. Vérifiez votre clé API.
+    </div>
+  );
+  if (!isLoaded) return (
+    <div className="p-8 text-center text-gray-500">Chargement de la carte...</div>
+  );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto px-4 py-6">
+
+      {/* Header + Contrôles */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
         <div>
-          <h1 className="text-2xl font-bold">📍 Près de moi</h1>
-          <p className="text-light-text">
-            {userLocation 
-              ? `Rayon : ${radius/1000} km — ${filtered.length} résultat${filtered.length>1?'s':''}`
-              : 'Localisez-vous pour voir les établissements'}
+          <h1 className="text-2xl font-bold text-gray-900">Près de moi</h1>
+          <p className="text-gray-500 text-sm">
+            {userLocation
+              ? `Position: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)} • Rayon: ${radius / 1000} km • ${establishments.length} résultat(s)`
+              : 'Cliquez sur le bouton pour localiser les établissements autour de vous'}
           </p>
         </div>
-        <button onClick={handleRefresh} className="btn-outline !px-4" disabled={loading}>
-          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-          {loading ? 'Recherche...' : 'Actualiser'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <select
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            value={radius}
+            onChange={(e) => setRadius(Number(e.target.value))}
+          >
+            <option value={1000}>1 km</option>
+            <option value={3000}>3 km</option>
+            <option value={5000}>5 km</option>
+            <option value={10000}>10 km</option>
+          </select>
+          <select
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+          >
+            <option value="">Tous les types</option>
+            <option value="hopital">Hôpital</option>
+            <option value="pharmacie">Pharmacie</option>
+            <option value="clinique">Clinique</option>
+          </select>
+          <button
+            onClick={handleNearMe}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
+          >
+            {loading ? 'Localisation...' : 'Près de moi'}
+          </button>
+          <button
+            onClick={handleRefresh}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition"
+          >
+            Actualiser
+          </button>
+        </div>
       </div>
 
-      {/* Error */}
+      {/* Erreur */}
       {error && (
-        <div className="bg-danger/15 border border-danger/30 text-danger px-4 py-3 rounded-xl flex items-center gap-3">
-          <AlertCircle size={20} />
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
           <span>{error}</span>
-          <button onClick={getUserLocation} className="ml-auto btn-outline !px-3 !py-1">Réessayer</button>
+          <button onClick={handleNearMe} className="ml-auto text-sm underline font-medium">
+            Réessayer
+          </button>
         </div>
       )}
 
-      {/* Filtres */}
-      <div className="flex flex-wrap gap-4 items-center p-4 bg-dark-surface rounded-2xl border border-dark-border">
-        <div className="flex items-center gap-2">
-          <Filter size={18} className="text-light-text" />
-          <select className="select-field" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-            <option value="">Tous</option>
-            <option value="pharmacie">Pharmacie</option>
-            <option value="clinique">Clinique</option>
-            <option value="hopital">Hôpital</option>
-          </select>
-        </div>
-        <select className="select-field !min-w-[100px]" value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
-          <option value={1000}>1 km</option>
-          <option value={3000}>3 km</option>
-          <option value={5000}>5 km</option>
-          <option value={10000}>10 km</option>
-        </select>
-      </div>
-
       {/* Carte + Liste */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 rounded-2xl overflow-hidden border border-dark-border shadow-glass">
-          <GoogleMap mapContainerStyle={containerStyle} center={mapCenter} zoom={13} options={mapOptions}>
+
+        {/* CARTE — onLoad stocke la ref, pas de re-render pour center/zoom */}
+        <div className="lg:col-span-2 rounded-2xl overflow-hidden border border-gray-200 shadow-lg bg-white">
+          <GoogleMap
+            mapContainerStyle={containerStyle}
+            center={DEFAULT_CENTER}       // ✅ valeur fixe — ne change jamais
+            zoom={DEFAULT_ZOOM}           // ✅ valeur fixe — ne provoque pas de re-render
+            onLoad={onMapLoad}            // ✅ stocke l'instance dans mapRef
+            options={{
+              zoomControl: true,
+              mapTypeControl: false,
+              streetViewControl: false,
+              fullscreenControl: false,
+            }}
+          >
+            {/* Marqueur position utilisateur */}
             {userLocation && (
-              <Marker position={userLocation} title="Vous" icon={{ path: "M0-48c-9 0-16 7-16 16 0 9 16 32 16 32s16-23 16-32c0-9-7-16-16-16z", fillColor: "#0EA5E9", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2, scale: 0.8 }} />
+              <Marker
+                position={userLocation}
+                title="Votre position"
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 10,
+                  fillColor: '#2563eb',
+                  fillOpacity: 1,
+                  strokeColor: '#ffffff',
+                  strokeWeight: 3,
+                }}
+              />
             )}
-            {filtered.map((e) => (
-              <Marker key={e.id} position={{ lat: e.latitude, lng: e.longitude }} title={e.nom} onClick={() => setSelected(e)} icon={{ path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z", fillColor: "#10B981", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2, scale: 0.9 }} />
+
+            {/* Marqueurs établissements */}
+            {establishments.map((e) => (
+              <Marker
+                key={e.id}
+                position={{ lat: e.latitude, lng: e.longitude }}
+                title={e.nom}
+                onClick={() => setSelected(e)}
+                icon={{
+                  url:
+                    e.type === 'pharmacie'
+                      ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
+                      : e.type === 'hopital'
+                      ? 'http://maps.google.com/mapfiles/ms/icons/red-dot.png'
+                      : 'http://maps.google.com/mapfiles/ms/icons/purple-dot.png',
+                }}
+              />
             ))}
+
+            {/* InfoWindow au clic */}
             {selected && (
-              <InfoWindow position={{ lat: selected.latitude, lng: selected.longitude }} onCloseClick={() => setSelected(null)}>
-                <div className="p-2 min-w-[200px] text-dark">
-                  <h4 className="font-semibold">{selected.nom}</h4>
-                  <p className="text-sm text-gray-600">{selected.adresse}</p>
-                  <p className="text-xs text-gray-500 mt-1">📏 {selected.distance < 1000 ? `${Math.round(selected.distance)} m` : `${(selected.distance/1000).toFixed(1)} km`}</p>
+              <InfoWindow
+                position={{ lat: selected.latitude, lng: selected.longitude }}
+                onCloseClick={() => setSelected(null)}
+              >
+                <div style={{ minWidth: 200, padding: 4 }}>
+                  <h4 style={{ fontWeight: 700, marginBottom: 4 }}>{selected.nom}</h4>
+                  <p style={{ fontSize: 13, color: '#555', marginBottom: 2 }}>{selected.adresse}</p>
+                  <p style={{ fontSize: 12, color: '#888', textTransform: 'capitalize' }}>{selected.type}</p>
+                  {selected.distance && (
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', marginTop: 6 }}>
+                      {selected.distance < 1000
+                        ? `${Math.round(selected.distance)} m`
+                        : `${(selected.distance / 1000).toFixed(1)} km`}
+                    </p>
+                  )}
                 </div>
               </InfoWindow>
             )}
           </GoogleMap>
         </div>
 
+        {/* LISTE */}
         <aside className="space-y-4">
-          <h3 className="text-lg font-semibold">Résultats ({filtered.length})</h3>
-          {loading && !establishments.length ? (
-            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="card animate-pulse"><div className="h-4 bg-dark-border rounded w-3/4 mb-2"></div></div>)}</div>
-          ) : filtered.length === 0 ? (
-            <p className="text-light-text italic text-center py-8">Aucun établissement trouvé.</p>
+          <h3 className="text-lg font-bold text-gray-900 bg-white p-3 rounded-xl shadow-sm border border-gray-100">
+            Résultats ({establishments.length})
+          </h3>
+
+          {loading && establishments.length === 0 ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : establishments.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-xl border border-gray-100">
+              <p className="text-gray-600 font-medium mb-2">Aucun établissement trouvé</p>
+              <p className="text-sm text-gray-500 mb-4">Essayez d'élargir le rayon de recherche</p>
+              <button
+                onClick={() => setRadius((r) => Math.min(r + 5000, 30000))}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+              >
+                Élargir le rayon (+5 km)
+              </button>
+            </div>
           ) : (
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-              {filtered.map((e) => (
-                <div key={e.id} className="card">
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {establishments.map((e) => (
+                <div
+                  key={e.id}
+                  onClick={() => {
+                    setSelected(e);
+                    moveMap(e.latitude, e.longitude, 16); // ✅ zoom sur l'établissement cliqué
+                  }}
+                  className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 cursor-pointer transition"
+                >
                   <div className="flex justify-between items-start gap-3">
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-light truncate">{e.nom}</h4>
-                      <p className="text-sm text-light-text capitalize">{e.type}</p>
-                      <p className="text-xs text-light-text mt-1">📏 {e.distance < 1000 ? `${Math.round(e.distance)} m` : `${(e.distance/1000).toFixed(1)} km`}</p>
+                      <h4 className="font-semibold text-gray-900 truncate">{e.nom}</h4>
+                      <p className="text-xs text-gray-500 capitalize mt-1">{e.type}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{e.adresse}</p>
+                      {e.distance && (
+                        <p className="text-xs font-bold text-blue-600 mt-1">
+                          {e.distance < 1000
+                            ? `${Math.round(e.distance)} m`
+                            : `${(e.distance / 1000).toFixed(1)} km`}
+                        </p>
+                      )}
                     </div>
-                    <span className={`badge ${e.etat === 'ouvert' ? 'badge-open' : 'badge-closed'}`}>{e.etat}</span>
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${
+                        e.etat === 'ouvert'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {e.etat === 'ouvert' ? 'Ouvert' : 'Fermé'}
+                    </span>
                   </div>
                 </div>
               ))}
