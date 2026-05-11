@@ -30,23 +30,44 @@ export default function DetailModal({
   }, [show]);
 
   const handleSubmitReview = () => {
-    if (userRating === 0) return showToast("Veuillez donner une note ⭐", "error");
-    if (!reviewText.trim()) return showToast("Veuillez écrire un commentaire", "error");
-    setSubmitting(true);
-    fetch('http://localhost:8000/api/reviews', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ etab_id: selectedId, rating: userRating, comment: reviewText })
+  if (userRating === 0) return showToast("Veuillez donner une note ⭐", "error");
+  if (!reviewText.trim()) return showToast("Veuillez écrire un commentaire", "error");
+  
+  setSubmitting(true);
+  
+  fetch('http://localhost:8000/api/reviews', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },  // ← Important !
+    body: JSON.stringify({
+      etab_id: selectedId,      // ← Nom du champ correct
+      rating: userRating,
+      comment: reviewText,
+      user_id: 1                // ← À remplacer par l'ID réel de l'user connecté
     })
-    .then(res => res.json())
-    .then(() => {
-      showToast("✅ Avis publié !", "success");
-      setUserRating(0); setReviewText("");
-      if (onReviewPosted) onReviewPosted();
-      return fetch(`http://localhost:8000/api/etablissements/${selectedId}`);
-    })
-    .then(res => res.json()).then(setData)
-    .finally(() => setSubmitting(false));
-  };
+  })
+  .then(async res => {
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Erreur serveur');
+    }
+    return res.json();
+  })
+  .then(() => {
+    showToast("✅ Avis publié !", "success");
+    setUserRating(0);
+    setReviewText("");
+    if (onReviewPosted) onReviewPosted();  // ← Re-fetch les données
+    // Re-fetch les détails de l'établissement pour mettre à jour les avis
+    return fetch(`http://localhost:8000/api/etablissements/${selectedId}`);
+  })
+  .then(res => res.json())
+  .then(setData)
+  .catch(err => {
+    console.error("❌ Erreur publication:", err);
+    showToast("❌ " + err.message, "error");
+  })
+  .finally(() => setSubmitting(false));
+};
 
   if (!show || !selectedId || loading || !data) return null;
 

@@ -281,30 +281,48 @@ def get_detail(etab_id: int, db: Session = Depends(get_db)):
     }
 
 @router.post("/reviews")
-def post_review( dict = Body(...), db: Session = Depends(get_db)):
-    if "etab_id" not in data or "rating" not in data:
-        raise HTTPException(status_code=400, detail="Champs requis manquants : etab_id, rating")
+def post_review(
+    review_data: dict = Body(...),  # ← CORRECTION : recevoir le body JSON
+    db: Session = Depends(get_db)
+):
+    """Créer un nouvel avis pour un établissement"""
     
-    etab = db.query(Establishment).filter(Establishment.id == data["etab_id"]).first()
+    # ✅ Vérification des champs requis
+    if "etab_id" not in review_data or "rating" not in review_data:
+        raise HTTPException(
+            status_code=400, 
+            detail="Champs requis manquants : etab_id, rating"
+        )
+    
+    # ✅ Vérifier que l'établissement existe
+    etab = db.query(Establishment).filter(Establishment.id == review_data["etab_id"]).first()
     if not etab:
         raise HTTPException(status_code=404, detail="Établissement introuvable")
-        
+    
+    # ✅ Valider la note (0 à 5)
     try:
-        rating_val = float(data["rating"])
+        rating_val = float(review_data["rating"])
         if not (0 <= rating_val <= 5):
             raise HTTPException(status_code=400, detail="La note doit être entre 0 et 5")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Note invalide")
-        
-    user = db.query(User).filter(User.id == 1).first()
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Note invalide (doit être un nombre)")
+    
+    # ✅ Utilisateur par défaut (à remplacer par auth réelle)
+    user_id = review_data.get("user_id", 1)
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur de test manquant")
-        
+        # Créer un user par défaut si inexistant (pour démo)
+        user = User(nom="Utilisateur", email="demo@saha.ma", hashed_password="demo", role="user")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    # ✅ Créer l'avis
     new_review = Review(
-        user_id=1,
-        etablissement_id=int(data["etab_id"]),
+        user_id=user.id,
+        etablissement_id=int(review_data["etab_id"]),
         rating=rating_val,
-        comment=str(data.get("comment", "")).strip(),
+        comment=str(review_data.get("comment", "")).strip() or None,
         created_at=datetime.utcnow()
     )
     
@@ -312,7 +330,12 @@ def post_review( dict = Body(...), db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_review)
     
-    return {"message": "Avis enregistré", "id": new_review.id}
+    return {
+        "message": "Avis enregistré avec succès",
+        "review_id": new_review.id,
+        "rating": new_review.rating,
+        "comment": new_review.comment
+    } 
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):

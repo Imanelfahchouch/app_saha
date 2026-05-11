@@ -1,7 +1,6 @@
 import React from 'react';
 import Hero from '../components/Hero.js';
 import Stats from '../components/Stats.js';
-import Map from '../components/Map.js';
 import EstablishmentCard from '../components/EstablishmentCard.js';
 
 export default function HomePage(props) {
@@ -11,7 +10,6 @@ export default function HomePage(props) {
       <Hero {...props} showNearMe={false} />
       
       <Stats />
-      <Map {...props} />
       
       <section className="py-5">
         <div className="container">

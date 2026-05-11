@@ -19,21 +19,13 @@ export default function MapPage(props) {
     fetch('http://localhost:8000/api/etablissements')
       .then(res => res.json())
       .then(data => {
-
-        setLocalEstablishments(data);
+        setAllEstablishments(data);
         if (props.setFilteredEtablissements) {
           props.setFilteredEtablissements(data);
         }
-
-        setAllEstablishments(data);
-        if (props.setFilteredEtablissements) props.setFilteredEtablissements(data);
-
       })
       .catch(err => console.error('Erreur chargement:', err));
   }, []);
-
-
-  // 2️⃣ Fonction Near Me : Affiche TA position IMMÉDIATEMENT + charge les résultats
 
   const handleNearMe = useCallback(() => {
     if (!navigator.geolocation) {
@@ -50,67 +42,55 @@ export default function MapPage(props) {
       async (pos) => {
 
         let { latitude, longitude, accuracy } = pos.coords;
-        
-        // ✅ AFFICHE IMMÉDIATEMENT TA POSITION (Toast + Console)
+
         const posText = `📍 Ta position : ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (±${Math.round(accuracy)}m)`;
         console.log(posText);
-        if (props.showToast) props.showToast(posText, "info");
 
-        // ✅ Correction intelligente si précision mauvaise (PC vs Mobile)
+        if (props.showToast) {
+          props.showToast(posText, "info");
+        }
+
         if (accuracy > 5000) {
           console.log("⚠️ Position PC imprécise → Correction Taza");
           latitude = 34.2133;
           longitude = -4.0100;
-          accuracy = 50;
         }
 
-        // ✅ Met à jour la position utilisateur & centre la carte IMMÉDIATEMENT
         const userPos = { lat: latitude, lng: longitude };
+
         setUserLocation(userPos);
         setMapCenter(userPos);
         setZoom(14);
 
         try {
-          // ✅ Appel API avec tes coordonnées exactes
           const res = await fetch(
             `http://localhost:8000/api/etablissements/nearby?lat=${latitude}&lng=${longitude}&radius=5000`
           );
 
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        
-        setUserLocation({ lat, lng });
-        setMapCenter({ lat, lng });
-        setZoom(15); 
-
-        try {
-          const res = await fetch(`http://localhost:8000/api/etablissements/nearby?lat=${lat}&lng=${lng}&radius=5000`);
-
           if (!res.ok) throw new Error('Erreur API');
-          
 
           const data = await res.json();
+
           console.log(`✅ ${data.length} établissement(s) trouvé(s) autour de toi`);
-          
-          // ✅ Affiche les résultats
-          setLocalEstablishments(data);
+
+          setNearbyEstablishments(data);
+
           if (props.setFilteredEtablissements) {
             props.setFilteredEtablissements(data);
           }
-          
+
           if (props.showToast) {
             props.showToast(`✅ ${data.length} établissement(s) proche(s)`, "success");
           }
-          
+
         } catch (err) {
           console.error(err);
-          setNearMeError('Impossible de charger les établissements proches');
-          if (props.showToast) props.showToast("Erreur chargement", "error");
 
-          setNearbyEstablishments(data);
-          if (props.setFilteredEtablissements) props.setFilteredEtablissements(data);
-        } catch (err) {
-          setNearMeError('Erreur lors du chargement des lieux proches');
+          setNearMeError('Impossible de charger les établissements proches');
+
+          if (props.showToast) {
+            props.showToast("Erreur chargement", "error");
+          }
 
         } finally {
           setNearMeLoading(false);
@@ -128,123 +108,215 @@ export default function MapPage(props) {
   const handleResetNearMe = () => {
     setIsNearMeActive(false);
     setUserLocation(null);
-
     setNearMeError(null);
+
+    setMapCenter({ lat: 33.5731, lng: -7.5898 });
+    setZoom(6);
+
     fetch('http://localhost:8000/api/etablissements')
       .then(res => res.json())
       .then(data => {
-        setLocalEstablishments(data);
-        if (props.setFilteredEtablissements) props.setFilteredEtablissements(data);
+        setAllEstablishments(data);
+
+        if (props.setFilteredEtablissements) {
+          props.setFilteredEtablissements(data);
+        }
       });
   };
 
   // ✅ Géocodage ville (Nominatim)
   const handleCitySearchOSM = async (cityName) => {
     if (!cityName.trim()) return;
+
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName + ', Maroc')}&limit=1`,
         { headers: { 'Accept-Language': 'fr' } }
       );
+
       const data = await response.json();
+
       if (data?.[0]?.lat && data?.[0]?.lon) {
-        setMapCenter({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+        setMapCenter({
+          lat: parseFloat(data[0].lat),
+          lng: parseFloat(data[0].lon)
+        });
+
         setZoom(13);
       }
-    } catch (err) { console.error('❌ Erreur géocodage:', err); }
+
+    } catch (err) {
+      console.error('❌ Erreur géocodage:', err);
+    }
   };
 
-  // Données à passer au composant Map
-  const establishmentsToUse = localEstablishments.length > 0 ? localEstablishments : props.filteredEtablissements;
+  const dataToShow = isNearMeActive
+    ? nearbyEstablishments
+    : allEstablishments;
 
   // ✅ Zoom auto sur résultats
   useEffect(() => {
-    if (establishmentsToUse?.[0]) {
-      setMapCenter({ lat: establishmentsToUse[0].latitude, lng: establishmentsToUse[0].longitude });
-      setZoom(establishmentsToUse.length === 1 ? 16 : establishmentsToUse.length <= 5 ? 14 : 13);
+    if (dataToShow?.[0]) {
+      setMapCenter({
+        lat: dataToShow[0].latitude,
+        lng: dataToShow[0].longitude
+      });
+
+      setZoom(
+        dataToShow.length === 1
+          ? 16
+          : dataToShow.length <= 5
+          ? 14
+          : 13
+      );
     }
-  }, [establishmentsToUse, props.activeFilters, props.searchQuery, props.activeStatusFilter]);
+  }, [
+    dataToShow,
+    props.activeFilters,
+    props.searchQuery,
+    props.activeStatusFilter
+  ]);
 
   // ✅ Recherche ville via texte
   useEffect(() => {
-    const villes = ['rabat', 'casablanca', 'fes', 'marrakech', 'tanger', 'agadir', 'meknes', 'oujda', 'taza'];
+    const villes = [
+      'rabat',
+      'casablanca',
+      'fes',
+      'marrakech',
+      'tanger',
+      'agadir',
+      'meknes',
+      'oujda',
+      'taza'
+    ];
+
     const query = props.searchQuery?.toLowerCase().trim();
+
     if (query && villes.some(v => query.includes(v))) {
-      handleCitySearchOSM(villes.find(v => query.includes(v)));
+      handleCitySearchOSM(
+        villes.find(v => query.includes(v))
+      );
     }
   }, [props.searchQuery]);
-
-    setMapCenter({ lat: 33.5731, lng: -7.5898 });
-    setZoom(6);
-    if (props.setFilteredEtablissements) props.setFilteredEtablissements(allEstablishments);
-  };
-
-  const dataToShow = isNearMeActive ? nearbyEstablishments : allEstablishments;
-
 
   return (
     <>
       <div className="py-4" style={{ background: "#fff" }}>
         <div className="container">
-          <h3 className="section-title mb-4"><i className="bi bi-map-fill text-primary me-2" />Carte Interactive</h3>
-          
-          <div className="search-container" style={{ marginTop: 0, marginBottom: "1.5rem" }}>
+          <h3 className="section-title mb-4">
+            <i className="bi bi-map-fill text-primary me-2" />
+            Carte Interactive
+          </h3>
+
+          <div
+            className="search-container"
+            style={{ marginTop: 0, marginBottom: "1.5rem" }}
+          >
             <div className="row g-3 align-items-center">
+
               <div className="col-lg-5">
                 <div className="position-relative">
-                  <i className="bi bi-search position-absolute" style={{ left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--gray-500)", fontSize: "1.1rem" }} />
+                  <i
+                    className="bi bi-search position-absolute"
+                    style={{
+                      left: 14,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--gray-500)",
+                      fontSize: "1.1rem"
+                    }}
+                  />
 
-                  <input type="text" className="search-input-custom" style={{ paddingLeft: 44 }} placeholder="Rechercher..." value={props.searchQuery} onChange={e => props.setSearchQuery(e.target.value)} />
+                  <input
+                    type="text"
+                    className="search-input-custom"
+                    style={{ paddingLeft: 44 }}
+                    placeholder="Rechercher par nom ou ville..."
+                    value={props.searchQuery}
+                    onChange={e => props.setSearchQuery(e.target.value)}
+                  />
                 </div>
               </div>
+
               <div className="col-lg-3">
-                <select className="search-input-custom" value={props.activeStatusFilter} onChange={e => props.setActiveStatusFilter(e.target.value)}>
+                <select
+                  className="search-input-custom"
+                  value={props.activeStatusFilter}
+                  onChange={e => props.setActiveStatusFilter(e.target.value)}
+                >
                   <option value="all">🕐 Tous</option>
                   <option value="ouvert">🟢 Ouvert</option>
                   <option value="ferme">🔴 Fermé</option>
                 </select>
               </div>
-              <div className="col-lg-2">
-                <button className="btn-near-me w-100" onClick={handleNearMe} disabled={nearMeLoading || props.geoLoading} style={{ background: isNearMeActive ? 'var(--primary)' : undefined, borderColor: isNearMeActive ? 'var(--primary)' : undefined }}>
-                  {nearMeLoading ? <><span className="spinner-border spinner-border-sm me-2" />Localisation...</> : <><i className="bi bi-crosshair me-2" />{isNearMeActive ? 'Near Me' : 'Near Me'}</>}
 
-                  <input type="text" className="search-input-custom" style={{ paddingLeft: 44 }} placeholder="Rechercher par nom ou ville..." value={props.searchQuery} onChange={e => props.setSearchQuery(e.target.value)} />
-                </div>
-              </div>
               <div className="col-lg-2">
-                <button className="btn-near-me w-100" onClick={handleNearMe} disabled={nearMeLoading} style={{ background: isNearMeActive ? 'var(--primary)' : undefined, borderColor: isNearMeActive ? 'var(--primary)' : undefined }}>
-                  {nearMeLoading ? <><span className="spinner-border spinner-border-sm me-2" />Localisation...</> : <><i className="bi bi-crosshair me-2" />Near Me</>}
-
+                <button
+                  className="btn-near-me w-100"
+                  onClick={handleNearMe}
+                  disabled={nearMeLoading || props.geoLoading}
+                  style={{
+                    background: isNearMeActive ? 'var(--primary)' : undefined,
+                    borderColor: isNearMeActive ? 'var(--primary)' : undefined
+                  }}
+                >
+                  {nearMeLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" />
+                      Localisation...
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-crosshair me-2" />
+                      Near Me
+                    </>
+                  )}
                 </button>
               </div>
+
               <div className="col-lg-2">
-                <button className="btn-search w-100" onClick={() => props.setSearchQuery('')}><i className="bi bi-x-circle me-2" />Effacer</button>
+                <button
+                  className="btn-search w-100"
+                  onClick={() => props.setSearchQuery('')}
+                >
+                  <i className="bi bi-x-circle me-2" />
+                  Effacer
+                </button>
               </div>
+
             </div>
-
-
-            
 
             <div className="filter-pills">
               {["pharmacie", "clinique", "hopital"].map(type => (
-                <button key={type} className={`filter-pill ${props.activeFilters.includes(type) ? "active" : ""}`} onClick={() => props.handleFilterToggle(type)}>
-                  <i className={`bi ${typeIcons[type]} me-1`} />{typeLabels[type]}
+                <button
+                  key={type}
+                  className={`filter-pill ${props.activeFilters.includes(type) ? "active" : ""}`}
+                  onClick={() => props.handleFilterToggle(type)}
+                >
+                  <i className={`bi ${typeIcons[type]} me-1`} />
+                  {typeLabels[type]}
                 </button>
               ))}
             </div>
 
-            {isNearMeActive && <button onClick={handleResetNearMe} className="btn btn-sm btn-link text-primary mt-2 p-0" style={{ fontSize: "0.85rem" }}>← Voir tous les établissements</button>}
-            {nearMeError && <div className="alert alert-danger mt-2 py-2" style={{ fontSize: "0.85rem", marginBottom: 0 }}><i className="bi bi-exclamation-triangle me-2" />{nearMeError}</div>}
-
-
             {isNearMeActive && (
-              <button onClick={handleResetNearMe} className="btn btn-sm btn-link text-primary mt-2 p-0" style={{ fontSize: "0.85rem" }}>
+              <button
+                onClick={handleResetNearMe}
+                className="btn btn-sm btn-link text-primary mt-2 p-0"
+                style={{ fontSize: "0.85rem" }}
+              >
                 ← Voir tous les établissements
               </button>
             )}
+
             {nearMeError && (
-              <div className="alert alert-danger mt-2 py-2" style={{ fontSize: "0.85rem", marginBottom: 0 }}>
-                <i className="bi bi-exclamation-triangle me-2" />{nearMeError}
+              <div
+                className="alert alert-danger mt-2 py-2"
+                style={{ fontSize: "0.85rem", marginBottom: 0 }}
+              >
+                <i className="bi bi-exclamation-triangle me-2" />
+                {nearMeError}
               </div>
             )}
 
@@ -252,62 +324,106 @@ export default function MapPage(props) {
         </div>
       </div>
 
-
-      <Map {...props} filteredEtablissements={establishmentsToUse} userLocation={userLocation} mapCenter={mapCenter} zoom={zoom} />
-
-      <Map 
-        {...props} 
+      <Map
+        {...props}
         filteredEtablissements={dataToShow}
         userLocation={userLocation}
         mapCenter={mapCenter}
         zoom={zoom}
       />
 
-
       <div className="py-4">
         <div className="container">
+
           <div className="d-flex justify-content-between align-items-center mb-3">
             <h6 style={{ fontWeight: 600, color: "var(--gray-700)" }}>
-              Résultats : <span style={{ color: "var(--primary)" }}>{dataToShow.length}</span> établissement(s)
+              Résultats :
+              <span style={{ color: "var(--primary)" }}>
+                {" "}{dataToShow.length}
+              </span>{" "}
+              établissement(s)
             </h6>
 
-            <button className="btn btn-sm btn-outline-primary rounded-pill" onClick={() => props.setCurrentPage("list")}>Voir en liste <i className="bi bi-list-ul ms-1" /></button>
+            <button
+              className="btn btn-sm btn-outline-primary rounded-pill"
+              onClick={() => props.setCurrentPage("list")}
+            >
+              Voir en liste
+              <i className="bi bi-list-ul ms-1" />
+            </button>
           </div>
-          <div className="row g-3">
-            {establishmentsToUse.map(e => (
-              <div className="col-md-4" key={e.id}>
-                <div className="card border-0 shadow-sm" style={{ borderRadius: 14, cursor: "pointer" }} onClick={() => props.openDetail(e)}>
-                  <div className="card-body p-3">
-                    <div className="d-flex justify-content-between align-items-start mb-2">
-                      <h6 style={{ fontWeight: 700, fontSize: "0.95rem", margin: 0 }}>{e.nom}</h6>
-                      <span className={`badge ${typeBadge[e.type]} rounded-pill`} style={{ fontSize: "0.7rem" }}>{typeLabels[e.type]}</span>
-                    </div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--gray-500)" }}><i className="bi bi-geo-alt-fill text-primary me-1" />{e.adresse}</div>
-                    {e.distance && <div style={{ fontSize: "0.75rem", color: "var(--primary)", marginTop: 2 }}><i className="bi bi-signpost-2 me-1" />{Math.round(e.distance)} m</div>}
-                    <div className="d-flex justify-content-between align-items-center mt-2">
-                      <StarRating rating={e.rating} size="sm" />
-                      <span className={`badge ${e.etat === "ouvert" ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger"} rounded-pill`} style={{ fontSize: "0.7rem" }}>{e.etat}</span>
 
-          </div>
           <div className="row g-3">
+
             {dataToShow.length === 0 && isNearMeActive ? (
-               <div className="col-12 text-center py-4 text-muted">
-                 Aucun établissement trouvé dans ce rayon (5km).
-               </div>
+              <div className="col-12 text-center py-4 text-muted">
+                Aucun établissement trouvé dans ce rayon (5km).
+              </div>
             ) : (
               dataToShow.map(e => (
                 <div className="col-md-4" key={e.id}>
-                  <div className="card border-0 shadow-sm" style={{ borderRadius: 14, cursor: "pointer" }} onClick={() => props.openDetail(e)}>
+                  <div
+                    className="card border-0 shadow-sm"
+                    style={{ borderRadius: 14, cursor: "pointer" }}
+                    onClick={() => props.openDetail(e)}
+                  >
                     <div className="card-body p-3">
+
                       <div className="d-flex justify-content-between align-items-start mb-2">
-                        <h6 style={{ fontWeight: 700, fontSize: "0.95rem", margin: 0 }}>{e.nom}</h6>
-                        <span className={`badge ${typeBadge[e.type]} rounded-pill`} style={{ fontSize: "0.7rem" }}>{typeLabels[e.type]}</span>
+                        <h6
+                          style={{
+                            fontWeight: 700,
+                            fontSize: "0.95rem",
+                            margin: 0
+                          }}
+                        >
+                          {e.nom}
+                        </h6>
+
+                        <span
+                          className={`badge ${typeBadge[e.type]} rounded-pill`}
+                          style={{ fontSize: "0.7rem" }}
+                        >
+                          {typeLabels[e.type]}
+                        </span>
                       </div>
-                      <div style={{ fontSize: "0.8rem", color: "var(--gray-500)" }}><i className="bi bi-geo-alt-fill text-primary me-1" />{e.adresse}</div>
-                      {e.distance && <div style={{ fontSize: "0.75rem", color: "var(--primary)", marginTop: 2 }}><i className="bi bi-signpost-2 me-1" />{Math.round(e.distance)} m</div>}
+
+                      <div
+                        style={{
+                          fontSize: "0.8rem",
+                          color: "var(--gray-500)"
+                        }}
+                      >
+                        <i className="bi bi-geo-alt-fill text-primary me-1" />
+                        {e.adresse}
+                      </div>
+
+                      {e.distance && (
+                        <div
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "var(--primary)",
+                            marginTop: 2
+                          }}
+                        >
+                          <i className="bi bi-signpost-2 me-1" />
+                          {Math.round(e.distance)} m
+                        </div>
+                      )}
+
                       <div className="d-flex justify-content-between align-items-center mt-2">
                         <StarRating rating={e.rating} size="sm" />
-                        <span className={`badge ${e.etat === "ouvert" ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger"} rounded-pill`} style={{ fontSize: "0.7rem" }}>{e.etat}</span>
+
+                        <span
+                          className={`badge ${
+                            e.etat === "ouvert"
+                              ? "bg-success-subtle text-success"
+                              : "bg-danger-subtle text-danger"
+                          } rounded-pill`}
+                          style={{ fontSize: "0.7rem" }}
+                        >
+                          {e.etat}
+                        </span>
                       </div>
 
                     </div>
@@ -315,6 +431,7 @@ export default function MapPage(props) {
                 </div>
               ))
             )}
+
           </div>
         </div>
       </div>
