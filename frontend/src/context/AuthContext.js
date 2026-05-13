@@ -1,70 +1,35 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginUser, registerUser, getCurrentUser } from '../services/api';
+// Ajoute cette fonction dans ton AuthContext
+const requestPasswordReset = async (email) => {
+  const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Erreur');
+  return data;
+};
 
-const AuthContext = createContext(null);
+const resetPassword = async (token, newPassword) => {
+  const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, new_password: newPassword })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Erreur');
+  return data;
+};
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  // Vérifier si l'utilisateur est déjà connecté au chargement
-  useEffect(() => {
-    const init = async () => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        try {
-          const data = await getCurrentUser();
-          setUser(data);
-        } catch {
-          localStorage.removeItem('token');
-        }
-      }
-      setLoading(false);
-    };
-    init();
-  }, []);
-
-  const login = async (email, password) => {
-    const data = await loginUser(email, password);
-    if (data.access_token) {
-      localStorage.setItem('token', data.access_token);
-      // Décoder le token pour extraire user info (ou appeler /me)
-      const userData = await getCurrentUser();
-      setUser(userData);
-    }
-    return data;
-  };
-
-  const register = async (userData) => {
-    const data = await registerUser(userData);
-    if (data.access_token) {
-      localStorage.setItem('token', data.access_token);
-      const userData = await getCurrentUser();
-      setUser(userData);
-    }
-    return data;
-  };
-
-  const logout = () => {
-    localStorage.removeItem('token');
-    setUser(null);
-  };
-
-  const value = {
-    user,
-    login,
-    register,
-    logout,
-    loading,
-    isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin'
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+// Ajoute-les au value retourné :
+const value = {
+  user,
+  login,
+  register,
+  logout,
+  requestPasswordReset,  // ← Nouveau
+  resetPassword,         // ← Nouveau
+  loading,
+  isAuthenticated: !!user,
+  isAdmin: user?.role === 'admin'
 };

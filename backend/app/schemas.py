@@ -98,3 +98,12 @@ class ReviewResponse(BaseModel):
     
     class Config:
         from_attributes = True
+        # ... (ton code existant se termine ici) ...
+
+# ✅ Nouveaux schemas pour réinitialisation de mot de passe
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str

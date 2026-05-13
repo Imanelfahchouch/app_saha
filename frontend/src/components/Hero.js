@@ -2,7 +2,6 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { typeIcons, typeLabels } from '../data/mockData.js';
 
-// ✅ showNearMe = true par défaut (pour ne pas casser la page Carte)
 export default function Hero({ 
   searchQuery, setSearchQuery, 
   activeStatusFilter, setActiveStatusFilter, 
@@ -51,21 +50,25 @@ export default function Hero({
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.3 }}>
           <div className="search-container">
             <div className="row g-3 align-items-center">
-              <div className="col-lg-5">
+              
+              {/* 🔍 Champ de recherche : toujours 6 colonnes */}
+              <div className="col-lg-6">
                 <div className="position-relative">
                   <i className="bi bi-search position-absolute" style={{ left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--gray-500)", fontSize: "1.1rem" }} />
                   <input type="text" className="search-input-custom" style={{ paddingLeft: 44 }} placeholder="Rechercher par nom ou ville..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                 </div>
               </div>
-              <div className="col-lg-3">
-                <select className="search-input-custom" style={{ cursor: "pointer" }} value={activeStatusFilter} onChange={e => setActiveStatusFilter(e.target.value)}>
+
+              {/* 🕐 Filtre Statut : prend l'espace restant (4 ou 6 colonnes) */}
+              <div className={`col-lg-${showNearMe ? 4 : 6}`}>
+                <select className="search-input-custom w-100" style={{ cursor: "pointer" }} value={activeStatusFilter} onChange={e => setActiveStatusFilter(e.target.value)}>
                   <option value="all">🕐 Tous les statuts</option>
                   <option value="ouvert">🟢 Ouvert</option>
                   <option value="ferme">🔴 Fermé</option>
                 </select>
               </div>
 
-              {/* ✅ BOUTON NEAR ME CONDITIONNEL */}
+              {/* 📍 Bouton Near Me : conditionnel, 2 colonnes si affiché */}
               {showNearMe && (
                 <div className="col-lg-2">
                   <button className="btn-near-me w-100" onClick={handleNearMe} disabled={geoLoading}>
@@ -78,14 +81,9 @@ export default function Hero({
                 </div>
               )}
 
-              {/* ✅ Ajustement automatique de la grille (2 cols si NearMe visible, 4 cols sinon) */}
-              <div className={`col-lg-${showNearMe ? 2 : 4}`}>
-                <button className="btn-search w-100" onClick={() => setCurrentPage("map")}>
-                  <i className="bi bi-search me-2" />Rechercher
-                </button>
-              </div>
             </div>
 
+            {/* Filtres par type (en dessous) */}
             <div className="filter-pills">
               <span style={{ fontSize: "0.8rem", color: "var(--gray-500)", fontWeight: 500, marginRight: 4 }}>
                 <i className="bi bi-funnel me-1" />Filtres :
